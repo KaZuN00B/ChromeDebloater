@@ -44,30 +44,37 @@ bool RelaunchAsAdmin(PWSTR pCmdLine) {
     return false;
 }
 
+static HANDLE s_hConsoleOut = NULL;
+
 void PrintConsole(const std::wstring& text) {
-    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    bool created = false;
-    if (!hStdOut || hStdOut == INVALID_HANDLE_VALUE) {
-        AttachConsole(ATTACH_PARENT_PROCESS);
-        hStdOut = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-        created = true;
+    if (!s_hConsoleOut || s_hConsoleOut == INVALID_HANDLE_VALUE) {
+        s_hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (!s_hConsoleOut || s_hConsoleOut == INVALID_HANDLE_VALUE) {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+            s_hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        }
+        if (!s_hConsoleOut || s_hConsoleOut == INVALID_HANDLE_VALUE) {
+            s_hConsoleOut = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+        }
     }
-    if (hStdOut && hStdOut != INVALID_HANDLE_VALUE) {
+    if (s_hConsoleOut && s_hConsoleOut != INVALID_HANDLE_VALUE) {
         DWORD written = 0;
-        if (!WriteConsoleW(hStdOut, text.c_str(), (DWORD)text.length(), &written, NULL)) {
-            int len = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, NULL, 0, NULL, NULL);
+        if (!WriteConsoleW(s_hConsoleOut, text.c_str(), (DWORD)text.length(), &written, NULL)) {
+            int len = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.length(), NULL, 0, NULL, NULL);
             if (len > 0) {
                 std::string u8(len, '\0');
-                WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, &u8[0], len, NULL, NULL);
-                WriteFile(hStdOut, u8.c_str(), (DWORD)strlen(u8.c_str()), &written, NULL);
+                WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.length(), &u8[0], len, NULL, NULL);
+                WriteFile(s_hConsoleOut, u8.data(), (DWORD)len, &written, NULL);
             }
         }
-        if (created) CloseHandle(hStdOut);
     }
 }
 
 int RunCliMode(int argc, wchar_t** argv) {
-    AttachConsole(ATTACH_PARENT_PROCESS);
+    HANDLE hExisting = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!hExisting || hExisting == INVALID_HANDLE_VALUE) {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
 
     PrintConsole(L"\n======================================================\n");
     PrintConsole(L"  ChromeDebloater Pro Native CLI (Elevated Mode)\n");
@@ -145,8 +152,9 @@ int RunCliMode(int argc, wchar_t** argv) {
 
     if (checkUpdates) {
         PrintConsole(L"[*] Querying upstream release channels for Chrome, Brave, and Edge...\n\n");
-        auto infos = UpdateChecker::CheckAll(browsers);
-        for (const auto& info : infos) {
+        for (const auto& b : browsers) {
+            PrintConsole(L"[*] Checking " + b.name + L"...\n");
+            auto info = UpdateChecker::CheckBrowser(b);
             PrintConsole(L"  Browser:   " + info.browserName + L"\n");
             PrintConsole(L"  Installed: " + (info.isInstalled ? (L"v" + info.installedVersion) : L"Not Detected") + L"\n");
             PrintConsole(L"  Upstream:  " + (info.latestVersion.empty() ? L"Unreachable / Offline" : (L"v" + info.latestVersion)) + L"\n");

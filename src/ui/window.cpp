@@ -200,7 +200,7 @@ void AppWindow::OnInit(HWND hwnd) {
     m_tweaks = TweakEngine::GetAllTweaks();
     m_snapshots = BackupEngine::ListSnapshots();
 
-    AddLog(L"ChromeDebloater Pro Native v3.3 started.", L"INFO");
+    AddLog(L"ChromeDebloater Pro Native v3.4 started.", L"INFO");
     AddLog(L"Universal Chromium Compatibility & Windows Network Shield Initialized.", L"INFO");
 
     RunAuditAsync();
@@ -294,7 +294,7 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
     g.DrawString(L"🛡 ChromeDebloater", -1, m_fTitle, PointF(20.0f, 18.0f), &titleBrush);
 
     SolidBrush verBrush(Theme::TextMuted);
-    g.DrawString(L"v3.3 Pro · Shield & Optimizer", -1, m_fSmall, PointF(22.0f, 42.0f), &verBrush);
+    g.DrawString(L"v3.4 Pro · Shield & Optimizer", -1, m_fSmall, PointF(22.0f, 42.0f), &verBrush);
 
     RectF adminBadge(20.0f, 64.0f, 134.0f, 22.0f);
     RenderUtils::DrawBadge(g, adminBadge, L"●  ADMIN ELEVATED", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
@@ -885,7 +885,9 @@ void AppWindow::OnMouseWheel(short delta) {
     if (m_currentPage == NavPage::Tweaks) {
         m_tweakScrollY -= (delta / 2);
         if (m_tweakScrollY < 0) m_tweakScrollY = 0;
-        if (m_tweakScrollY > 450) m_tweakScrollY = 450;
+        int maxScroll = (int)(m_tweaks.size() * 74) - 340;
+        if (maxScroll < 0) maxScroll = 0;
+        if (m_tweakScrollY > maxScroll) m_tweakScrollY = maxScroll;
         InvalidateRect(m_hwnd, NULL, FALSE);
     }
 }

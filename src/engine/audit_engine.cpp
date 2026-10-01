@@ -1,4 +1,5 @@
 #include "audit_engine.h"
+#include "network_shield.h"
 #include <iostream>
 
 bool AuditEngine::ReadRegDword(HKEY hRoot, const std::wstring& subKey, const std::wstring& name, DWORD& outVal) {
@@ -74,11 +75,13 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     const std::wstring& up = browser.updateKey;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. AI & Gemini / Copilot Subsystems
+    // 1. AI & Gemini / Copilot / Leo Subsystems
     // ─────────────────────────────────────────────────────────────────────────
     bool aiDisabled = CheckDualDword(p, L"GenAiDefaultSettings", 2) || CheckDualDword(p, L"OptimizationGuideAllowed", 0);
     if (browser.id == L"edge") {
-        aiDisabled = aiDisabled || CheckDualDword(p, L"ComposeInlineEnabled", 0);
+        aiDisabled = aiDisabled || CheckDualDword(p, L"HubsSidebarEnabled", 0) || CheckDualDword(p, L"ComposeInlineEnabled", 0);
+    } else if (browser.id == L"brave") {
+        aiDisabled = aiDisabled || CheckDualDword(p, L"BraveAIChatEnabled", 0);
     }
     
     INT64 aiModelSize = 0;
@@ -90,7 +93,7 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     AuditItem itemAi;
     itemAi.id = 1;
     itemAi.category = L"AI & Models";
-    itemAi.name = L"AI & Gemini/Copilot Subsystems";
+    itemAi.name = L"AI, Gemini, Copilot & Leo";
     if (aiDisabled && aiModelSize == 0) {
         itemAi.status = AuditStatus::Optimized;
         itemAi.description = L"AI features blocked by enterprise policy. 0 on-disk models found.";
@@ -106,18 +109,24 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     report.reclaimableBytes += aiModelSize;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. Telemetry, Crash Reports & Diagnostics
+    // 2. Telemetry, UKM, Crash Reports & Diagnostics
     // ─────────────────────────────────────────────────────────────────────────
     bool metricsOff = CheckDualDword(p, L"MetricsReportingEnabled", 0);
+    bool ukmOff = CheckDualDword(p, L"UrlKeyedAnonymizedDataCollectionEnabled", 0);
     bool sbOff = CheckDualDword(p, L"SafeBrowsingExtendedReportingEnabled", 0);
+    if (browser.id == L"edge") {
+        metricsOff = metricsOff && CheckDualDword(p, L"DiagnosticData", 0);
+    } else if (browser.id == L"brave") {
+        metricsOff = metricsOff && CheckDualDword(p, L"BraveP3AEnabled", 0);
+    }
 
     AuditItem itemTel;
     itemTel.id = 2;
     itemTel.category = L"Privacy";
-    itemTel.name = L"Telemetry & Diagnostic Reporting";
-    if (metricsOff && sbOff) {
+    itemTel.name = L"Telemetry, UKM & Diagnostic Reporting";
+    if (metricsOff && (ukmOff || sbOff)) {
         itemTel.status = AuditStatus::Optimized;
-        itemTel.description = L"Telemetry, background diagnostics and variations blocked.";
+        itemTel.description = L"Telemetry, UKM logging, background diagnostics and variations blocked.";
         itemTel.recommendation = L"Protected.";
         report.optimizedCount++;
     } else {
@@ -129,7 +138,7 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     report.items.push_back(itemTel);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 3. DNS-over-HTTPS (Quad9 Encrypted DNS)
+    // 3. DNS-over-HTTPS (Quad9 Encrypted DNS) & ECH
     // ─────────────────────────────────────────────────────────────────────────
     std::wstring dohMode, dohTpl;
     ReadRegString(HKEY_LOCAL_MACHINE, p, L"DnsOverHttpsMode", dohMode);
@@ -138,6 +147,7 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
         ReadRegString(HKEY_CURRENT_USER, p, L"DnsOverHttpsTemplates", dohTpl);
     }
     bool dohOk = (!dohTpl.empty() && dohTpl.find(L"quad9.net") != std::wstring::npos);
+    bool echOn = CheckDualDword(p, L"EncryptedClientHelloEnabled", 1) || CheckDualDword(p, L"PostQuantumKeyAgreementEnabled", 1);
 
     AuditItem itemDoh;
     itemDoh.id = 3;
@@ -180,24 +190,28 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     report.items.push_back(itemPerf);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 5. Ultra Low-Resource Limits
+    // 5. Ultra Low-Resource Limits & Startup Boost
     // ─────────────────────────────────────────────────────────────────────────
     bool procLimit = CheckDualDword(p, L"RendererProcessLimit", 4);
     bool cacheLimit = CheckDualDword(p, L"DiskCacheSize", 268435456);
     bool prefetchOff = CheckDualDword(p, L"NetworkPredictionOptions", 2);
+    bool boostOff = true;
+    if (browser.id == L"edge") {
+        boostOff = CheckDualDword(p, L"StartupBoostEnabled", 0);
+    }
 
     AuditItem itemUltra;
     itemUltra.id = 5;
     itemUltra.category = L"Performance";
-    itemUltra.name = L"Ultra Low-Resource Limits";
-    if (procLimit && cacheLimit && prefetchOff) {
+    itemUltra.name = L"Ultra Low-Resource Limits & Startup Boost";
+    if (procLimit && cacheLimit && prefetchOff && boostOff) {
         itemUltra.status = AuditStatus::Optimized;
-        itemUltra.description = L"Renderer cap (4), 256MB cache ceiling & prefetch disabled.";
+        itemUltra.description = L"Renderer cap (4), 256MB cache ceiling, prefetch off & background boost killed.";
         itemUltra.recommendation = L"Max low-resource configuration active.";
         report.optimizedCount++;
     } else {
         itemUltra.status = AuditStatus::Attention;
-        itemUltra.description = L"Uncapped background processes and unbounded disk cache.";
+        itemUltra.description = L"Uncapped background processes, unbounded disk cache or active startup boost.";
         itemUltra.recommendation = L"Apply Ultra Low-Resource policy suite.";
         report.bloatedCount++;
     }
@@ -226,9 +240,16 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     report.items.push_back(itemSandbox);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 7. Commercial & Shopping Bloat
+    // 7. Commercial, Shopping & Crypto Bloat
     // ─────────────────────────────────────────────────────────────────────────
-    bool shopOff = CheckDualDword(p, L"CommercePriceTrackingEnabled", 0) || CheckDualDword(p, L"EdgeShoppingDataEnabled", 0);
+    bool shopOff = false;
+    if (browser.id == L"edge") {
+        shopOff = CheckDualDword(p, L"EdgeShoppingDataEnabled", 0) || CheckDualDword(p, L"EdgeWalletEnabled", 0);
+    } else if (browser.id == L"brave") {
+        shopOff = CheckDualDword(p, L"BraveRewardsDisabled", 1) || CheckDualDword(p, L"BraveWalletDisabled", 1);
+    } else {
+        shopOff = CheckDualDword(p, L"CommercePriceTrackingEnabled", 0) || CheckDualDword(p, L"AutofillPaymentMethodsEnabled", 0);
+    }
 
     AuditItem itemShop;
     itemShop.id = 7;
@@ -236,12 +257,12 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     itemShop.name = L"Shopping & Commercial Bloat";
     if (shopOff) {
         itemShop.status = AuditStatus::Optimized;
-        itemShop.description = L"Shopping price tracking, coupon prompts & desktop widgets disabled.";
+        itemShop.description = L"Shopping price tracking, coupon prompts, wallets & crypto widgets disabled.";
         itemShop.recommendation = L"Clean.";
         report.optimizedCount++;
     } else {
         itemShop.status = AuditStatus::Bloated;
-        itemShop.description = L"E-commerce price scanners and shopping coupons active.";
+        itemShop.description = L"E-commerce price scanners, shopping coupons or crypto extensions active.";
         itemShop.recommendation = L"Disable shopping & price tracking bloat.";
         report.bloatedCount++;
     }
@@ -251,6 +272,9 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     // 8. UI Clutter (Cast, Sharing Hub, Lens)
     // ─────────────────────────────────────────────────────────────────────────
     bool clutterOff = CheckDualDword(p, L"ShowCastIconInToolbar", 0) && CheckDualDword(p, L"EnableMediaRouter", 0);
+    if (browser.id == L"edge") {
+        clutterOff = clutterOff || CheckDualDword(p, L"NewTabPageContentEnabled", 0);
+    }
 
     AuditItem itemClutter;
     itemClutter.id = 8;
@@ -318,6 +342,28 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
         report.bloatedCount++;
     }
     report.items.push_back(itemUp);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 11. Windows Network Shield (Firewall & Hosts Sinkhole)
+    // ─────────────────────────────────────────────────────────────────────────
+    bool shieldActive = NetworkShield::IsHostsBlockActive() || NetworkShield::IsFirewallBlockActive();
+
+    AuditItem itemShield;
+    itemShield.id = 11;
+    itemShield.category = L"Network Shield";
+    itemShield.name = L"Firewall & Hosts Network Shield";
+    if (shieldActive) {
+        itemShield.status = AuditStatus::Optimized;
+        itemShield.description = L"Outbound telemetry blocked at kernel firewall & hosts level.";
+        itemShield.recommendation = L"Protected.";
+        report.optimizedCount++;
+    } else {
+        itemShield.status = AuditStatus::Bloated;
+        itemShield.description = L"Telemetry and tracking domains can reach Google/Microsoft servers.";
+        itemShield.recommendation = L"Engage Windows Firewall & Hosts Network Shield.";
+        report.bloatedCount++;
+    }
+    report.items.push_back(itemShield);
 
     // Score calculation
     int totalAssessable = report.optimizedCount + report.bloatedCount;

@@ -5,10 +5,11 @@
 
 typedef BOOL (WINAPI *DnsFlushResolverCacheFn)(VOID);
 
-static const std::string kStartTag = "# === ChromeDebloater Google Telemetry Block START ===";
-static const std::string kEndTag   = "# === ChromeDebloater Google Telemetry Block END ===";
+static const std::string kStartTag = "# === ChromeDebloater Telemetry Shield START ===";
+static const std::string kEndTag   = "# === ChromeDebloater Telemetry Shield END ===";
 
 static const std::vector<std::string> kTelemetryDomains = {
+    // ── Google Chrome Telemetry & Experimentation ─────────────────────────
     "telemetry.google.com",
     "clients2.google.com",
     "clients4.google.com",
@@ -19,13 +20,6 @@ static const std::vector<std::string> kTelemetryDomains = {
     "chrome-variations.google.com",
     "variations.google.com",
     "client-channel.google.com",
-    "google-analytics.com",
-    "www.google-analytics.com",
-    "ssl.google-analytics.com",
-    "analytics.google.com",
-    "doubleclick.net",
-    "pagead2.googlesyndication.com",
-    "adservice.google.com",
     "metrics.gstatic.com",
     "tools.google.com",
     "update.googleapis.com",
@@ -33,7 +27,42 @@ static const std::vector<std::string> kTelemetryDomains = {
     "redirector.gvt1.com",
     "app-measurement.com",
     "firebase-settings.crashlytics.com",
-    "reports.crashlytics.com"
+    "reports.crashlytics.com",
+    "suggestqueries.google.com",
+    "beacons.gvt2.com",
+    "beacons2.gvt2.com",
+    "beacons3.gvt2.com",
+    "beacons4.gvt2.com",
+    "beacons5.gvt2.com",
+    "beacons.gcp.gvt2.com",
+    "google-analytics.com",
+    "www.google-analytics.com",
+    "ssl.google-analytics.com",
+    "analytics.google.com",
+    "doubleclick.net",
+    "pagead2.googlesyndication.com",
+    "adservice.google.com",
+
+    // ── Microsoft Edge Telemetry, Activity & Shopping ─────────────────────
+    "edge.microsoft.com",
+    "edge-enterprise.activity.windows.com",
+    "msedge.api.cdp.microsoft.com",
+    "data.msn.com",
+    "arc.msn.com",
+    "activity.windows.com",
+    "config.edge.skype.com",
+    "shopping.edge.microsoft.com",
+    "browser.events.data.msn.com",
+    "assets.msn.com",
+    "edge.activity.windows.com",
+
+    // ── Brave Telemetry, Analytics & Sponsored Services ───────────────────
+    "p3a.brave.com",
+    "variations.brave.com",
+    "rewards.brave.com",
+    "grant.rewards.brave.com",
+    "laptop-updates.brave.com",
+    "analytics.brave.com"
 };
 
 static std::wstring GetHostsFilePath() {
@@ -69,6 +98,20 @@ static bool ExecuteHiddenProcess(const std::wstring& cmd) {
     return false;
 }
 
+static void StripBlock(std::string& content, const std::string& startTag, const std::string& endTag) {
+    size_t startPos = content.find(startTag);
+    if (startPos != std::string::npos) {
+        size_t endPos = content.find(endTag);
+        if (endPos != std::string::npos) {
+            endPos += endTag.length();
+            while (endPos < content.length() && (content[endPos] == '\r' || content[endPos] == '\n')) {
+                endPos++;
+            }
+            content.erase(startPos, endPos - startPos);
+        }
+    }
+}
+
 bool NetworkShield::IsHostsBlockActive() {
     std::wstring hPath = GetHostsFilePath();
     std::ifstream in(hPath, std::ios::binary);
@@ -76,7 +119,8 @@ bool NetworkShield::IsHostsBlockActive() {
     std::stringstream ss;
     ss << in.rdbuf();
     std::string content = ss.str();
-    return (content.find(kStartTag) != std::string::npos);
+    return (content.find(kStartTag) != std::string::npos ||
+            content.find("# === ChromeDebloater Google Telemetry Block START ===") != std::string::npos);
 }
 
 int NetworkShield::GetHostsBlockedDomainsCount() {
@@ -100,20 +144,9 @@ bool NetworkShield::EnableHostsBlock(EngineLogCallback logCb) {
         in.close();
     }
 
-    // Strip previous block if present
-    size_t startPos = content.find(kStartTag);
-    if (startPos != std::string::npos) {
-        size_t endPos = content.find(kEndTag);
-        if (endPos != std::string::npos) {
-            endPos += kEndTag.length();
-            if (endPos < content.length() && (content[endPos] == '\r' || content[endPos] == '\n')) {
-                while (endPos < content.length() && (content[endPos] == '\r' || content[endPos] == '\n')) {
-                    endPos++;
-                }
-            }
-            content.erase(startPos, endPos - startPos);
-        }
-    }
+    // Strip previous blocks (both current and legacy tags)
+    StripBlock(content, kStartTag, kEndTag);
+    StripBlock(content, "# === ChromeDebloater Google Telemetry Block START ===", "# === ChromeDebloater Google Telemetry Block END ===");
 
     // Append clean new block
     if (!content.empty() && content.back() != '\n') {
@@ -137,7 +170,7 @@ bool NetworkShield::EnableHostsBlock(EngineLogCallback logCb) {
     out.close();
 
     FlushDns();
-    logCb(L"[✓] " + std::to_wstring(kTelemetryDomains.size()) + L" Google telemetry & analytics domains blocked via hosts file.", L"SUCCESS");
+    logCb(L"[✓] " + std::to_wstring(kTelemetryDomains.size()) + L" Google, Edge, and Brave telemetry domains blocked via hosts file.", L"SUCCESS");
     return true;
 }
 
@@ -156,24 +189,20 @@ bool NetworkShield::DisableHostsBlock(EngineLogCallback logCb) {
     std::string content = ss.str();
     in.close();
 
-    size_t startPos = content.find(kStartTag);
-    if (startPos != std::string::npos) {
-        size_t endPos = content.find(kEndTag);
-        if (endPos != std::string::npos) {
-            endPos += kEndTag.length();
-            while (endPos < content.length() && (content[endPos] == '\r' || content[endPos] == '\n')) {
-                endPos++;
-            }
-            content.erase(startPos, endPos - startPos);
+    bool found = (content.find(kStartTag) != std::string::npos ||
+                  content.find("# === ChromeDebloater Google Telemetry Block START ===") != std::string::npos);
 
-            std::ofstream out(hPath, std::ios::binary | std::ios::trunc);
-            if (out.is_open()) {
-                out << content;
-                out.close();
-                FlushDns();
-                logCb(L"[✓] Hosts file telemetry blocklist removed and DNS cache flushed.", L"SUCCESS");
-                return true;
-            }
+    if (found) {
+        StripBlock(content, kStartTag, kEndTag);
+        StripBlock(content, "# === ChromeDebloater Google Telemetry Block START ===", "# === ChromeDebloater Google Telemetry Block END ===");
+
+        std::ofstream out(hPath, std::ios::binary | std::ios::trunc);
+        if (out.is_open()) {
+            out << content;
+            out.close();
+            FlushDns();
+            logCb(L"[✓] Hosts file telemetry blocklist removed and DNS cache flushed.", L"SUCCESS");
+            return true;
         }
     }
     logCb(L"[i] No ChromeDebloater hosts blocklist was present.", L"INFO");
@@ -181,7 +210,6 @@ bool NetworkShield::DisableHostsBlock(EngineLogCallback logCb) {
 }
 
 bool NetworkShield::IsFirewallBlockActive() {
-    // Check if the primary crashpad or updater block rule exists in advfirewall
     std::wstring cmd = L"netsh advfirewall firewall show rule name=\"ChromeDebloater - Block Google Update (x64)\"";
     
     SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
@@ -224,11 +252,11 @@ bool NetworkShield::IsFirewallBlockActive() {
 }
 
 int NetworkShield::GetActiveFirewallRulesCount() {
-    return IsFirewallBlockActive() ? 5 : 0;
+    return IsFirewallBlockActive() ? 12 : 0;
 }
 
 bool NetworkShield::EnableFirewallBlock(const BrowserTarget& browser, EngineLogCallback logCb) {
-    logCb(L"Configuring Windows Defender Firewall outbound block rules...", L"ACTION");
+    logCb(L"Configuring Windows Defender Firewall outbound block rules for Chrome, Brave, and Edge...", L"ACTION");
 
     // Remove old rules first to ensure clean idempotent addition
     DisableFirewallBlock([](const std::wstring&, const std::wstring&) {});
@@ -244,9 +272,19 @@ bool NetworkShield::EnableFirewallBlock(const BrowserTarget& browser, EngineLogC
         { L"ChromeDebloater - Block Google Update (x64)", pf + L"\\Google\\Update\\GoogleUpdate.exe" },
         { L"ChromeDebloater - Block Google Update (x86)", pf86 + L"\\Google\\Update\\GoogleUpdate.exe" },
         { L"ChromeDebloater - Block Google Update (User)", localApp + L"\\Google\\Update\\GoogleUpdate.exe" },
-        { L"ChromeDebloater - Block Microsoft Edge Update", pf86 + L"\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe" },
-        { L"ChromeDebloater - Block Brave Software Update", pf86 + L"\\BraveSoftware\\Update\\BraveUpdate.exe" },
-        { L"ChromeDebloater - Block Chrome Crashpad Handler", browser.userDataDir + L"\\Crashpad\\crashpad_handler.exe" }
+        { L"ChromeDebloater - Block Google Updater (System)", pf + L"\\Google\\GoogleUpdater\\updater.exe" },
+        { L"ChromeDebloater - Block Google Updater (User)", localApp + L"\\Google\\GoogleUpdater\\updater.exe" },
+        { L"ChromeDebloater - Block Microsoft Edge Update (x86)", pf86 + L"\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe" },
+        { L"ChromeDebloater - Block Microsoft Edge Update (x64)", pf + L"\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe" },
+        { L"ChromeDebloater - Block Microsoft Edge Update (User)", localApp + L"\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe" },
+        { L"ChromeDebloater - Block Brave Software Update (x86)", pf86 + L"\\BraveSoftware\\Update\\BraveUpdate.exe" },
+        { L"ChromeDebloater - Block Brave Software Update (x64)", pf + L"\\BraveSoftware\\Update\\BraveUpdate.exe" },
+        { L"ChromeDebloater - Block Brave Software Update (User)", localApp + L"\\BraveSoftware\\Update\\BraveUpdate.exe" },
+        { L"ChromeDebloater - Block Chrome Crashpad Handler", browser.userDataDir + L"\\Crashpad\\crashpad_handler.exe" },
+        { L"ChromeDebloater - Block Edge Crashpad Handler", localApp + L"\\Microsoft\\Edge\\User Data\\Crashpad\\crashpad_handler.exe" },
+        { L"ChromeDebloater - Block Brave Crashpad Handler", localApp + L"\\BraveSoftware\\Brave-Browser\\User Data\\Crashpad\\crashpad_handler.exe" },
+        { L"ChromeDebloater - Block Edge Identity Helper", pf86 + L"\\Microsoft\\Edge\\Application\\identity_helper.exe" },
+        { L"ChromeDebloater - Block Edge Notification Helper", pf86 + L"\\Microsoft\\Edge\\Application\\notification_helper.exe" }
     };
 
     int added = 0;
@@ -258,7 +296,7 @@ bool NetworkShield::EnableFirewallBlock(const BrowserTarget& browser, EngineLogC
         }
     }
 
-    logCb(L"[✓] Windows Defender Firewall rules created: Outbound updaters & crashpad blocked.", L"SUCCESS");
+    logCb(L"[✓] Windows Defender Firewall rules created: Outbound updaters & crashpads blocked (" + std::to_wstring(added) + L" rules enforced).", L"SUCCESS");
     return true;
 }
 
@@ -267,9 +305,21 @@ bool NetworkShield::DisableFirewallBlock(EngineLogCallback logCb) {
         L"ChromeDebloater - Block Google Update (x64)",
         L"ChromeDebloater - Block Google Update (x86)",
         L"ChromeDebloater - Block Google Update (User)",
+        L"ChromeDebloater - Block Google Updater (System)",
+        L"ChromeDebloater - Block Google Updater (User)",
+        L"ChromeDebloater - Block Microsoft Edge Update (x86)",
+        L"ChromeDebloater - Block Microsoft Edge Update (x64)",
+        L"ChromeDebloater - Block Microsoft Edge Update (User)",
         L"ChromeDebloater - Block Microsoft Edge Update",
+        L"ChromeDebloater - Block Brave Software Update (x86)",
+        L"ChromeDebloater - Block Brave Software Update (x64)",
+        L"ChromeDebloater - Block Brave Software Update (User)",
         L"ChromeDebloater - Block Brave Software Update",
-        L"ChromeDebloater - Block Chrome Crashpad Handler"
+        L"ChromeDebloater - Block Chrome Crashpad Handler",
+        L"ChromeDebloater - Block Edge Crashpad Handler",
+        L"ChromeDebloater - Block Brave Crashpad Handler",
+        L"ChromeDebloater - Block Edge Identity Helper",
+        L"ChromeDebloater - Block Edge Notification Helper"
     };
 
     for (const auto* r : ruleNames) {

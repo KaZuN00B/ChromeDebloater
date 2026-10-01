@@ -15,18 +15,18 @@ typedef BOOL (WINAPI *DnsFlushResolverCacheFn)(VOID);
 std::vector<TweakItem> TweakEngine::GetAllTweaks() {
     return {
         {
-            1, L"AI & Models", L"Eliminate AI & Gemini Subsystems",
-            L"Enforces enterprise policies to kill Gemini, PromptAPI, and Edge Copilot, and deletes on-disk local models.",
+            1, L"AI & Models", L"Eliminate AI, Gemini, Copilot & Leo",
+            L"Enforces policies to kill Gemini, PromptAPI, Edge Copilot/Discover, and Brave Leo AI, and purges on-disk local models.",
             L"HIGH IMPACT", true, false
         },
         {
-            2, L"Privacy", L"Quad9 DoH & Network Security",
-            L"Enforces DNS-over-HTTPS (Quad9), HTTPS-Only mode, WebRTC IP leak mitigation, and blocks intrusive device sensors.",
+            2, L"Privacy", L"Quad9 DoH, ECH & Anti-Snooping Security",
+            L"Enforces Quad9 DoH, Encrypted Client Hello (ECH), HTTPS-Only, Post-Quantum TLS, and blocks sensor & WebRTC leaks.",
             L"HIGH IMPACT", true, false
         },
         {
-            3, L"Privacy", L"Suppress Telemetry & Diagnostics",
-            L"Stops metrics reporting, Omnibox keystroke telemetry, SafeBrowsing extended telemetry, and component updaters.",
+            3, L"Privacy", L"Suppress Telemetry, UKM & Variations",
+            L"Blocks metrics reporting, URL-keyed anonymized telemetry (UKM), cloud spellcheck, external variations, and Brave P3A.",
             L"RECOMMENDED", true, false
         },
         {
@@ -36,32 +36,32 @@ std::vector<TweakItem> TweakEngine::GetAllTweaks() {
         },
         {
             5, L"Performance", L"Process Clamping & Memory Saver",
-            L"Clamps iframe processes (SitePerProcess=0), activates aggressive tab discarding, and clamps background timers.",
+            L"Clamps iframe processes (SitePerProcess=0), activates aggressive tab discarding, sleeping tabs, and background timers.",
             L"HIGH IMPACT", true, false
         },
         {
-            6, L"Performance", L"Ultra Low-Resource & Process Limits",
-            L"Caps renderers to 4, limits disk cache to 256MB, media cache to 128MB, and enables 5-min background tab sleep.",
+            6, L"Performance", L"Ultra Low-Resource Limits & Startup Boost",
+            L"Caps renderers to 4, limits disk cache to 256MB, enables 5-min tab sleep, and stops Edge 24/7 background startup boost.",
             L"ULTRA-LOW RAM", true, false
         },
         {
-            7, L"Performance", L"Inject High-Speed Performance Flags",
-            L"Injects QUIC protocol, zero-copy rasterization, D3D11 ANGLE, Skia Graphite, and parallel downloading into Local State.",
+            7, L"Performance", L"Inject High-Speed & Modern Crypto Flags",
+            L"Injects QUIC protocol, zero-copy rasterization, D3D11 ANGLE, Skia Graphite, ECH, and Kyber post-quantum into Local State.",
             L"RECOMMENDED", true, false
         },
         {
             8, L"Privacy", L"Eliminate Privacy Sandbox & Ad Topics",
-            L"Disables Google Topics API, Privacy Sandbox ad measurement, site-commissioned ads, and survey prompts.",
+            L"Disables Google Topics API, Privacy Sandbox ad measurement, site-commissioned ads, attribution reporting, and surveys.",
             L"HIGH IMPACT", true, false
         },
         {
-            9, L"Debloat", L"Remove Commercial & Shopping Bloat",
-            L"Disables price tracking, shopping list prompts, Edge shopping discounts/coupons, and floating search widgets.",
+            9, L"Debloat", L"Remove Commercial, Shopping & Crypto Bloat",
+            L"Disables price tracking, Edge Shopping & Wallet, Brave Rewards, Brave Wallet crypto extensions, and Brave VPN.",
             L"RECOMMENDED", true, false
         },
         {
-            10, L"Interface", L"Strip UI Clutter & Background Features",
-            L"Removes Cast button from toolbar, Desktop Sharing Hub, shared clipboard, Google Lens search, and NTP news feeds.",
+            10, L"Interface", L"Strip UI Clutter, News Feeds & Media Router",
+            L"Removes Cast button, SSDP local broadcasting, Google Lens, Edge desktop widget, Edge workspaces, and NTP news feeds.",
             L"SAFE", true, false
         },
         {
@@ -81,7 +81,7 @@ std::vector<TweakItem> TweakEngine::GetAllTweaks() {
         },
         {
             14, L"Network Shield", L"Windows Firewall & Hosts Telemetry Block",
-            L"Enforces Windows Defender Firewall outbound rules and sinkholes Google telemetry domains via Windows hosts file.",
+            L"Enforces Windows Defender Firewall outbound rules and sinkholes 48+ Google, Edge, and Brave telemetry domains via hosts file.",
             L"SHIELD", true, false
         }
     };
@@ -292,8 +292,8 @@ bool TweakEngine::ExecuteTweaks(
         int pct = (step * 100) / total;
 
         switch (id) {
-            case 1: { // AI & Gemini / Copilot Elimination
-                progCb(pct, L"Killing AI, Gemini & Copilot subsystems...");
+            case 1: { // AI & Gemini / Copilot / Leo Elimination
+                progCb(pct, L"Killing AI, Gemini, Copilot & Leo subsystems...");
 
                 struct RegEntry { const wchar_t* name; DWORD val; } entries[] = {
                     { L"GenAiDefaultSettings",            2 },
@@ -316,11 +316,16 @@ bool TweakEngine::ExecuteTweaks(
                     { L"AutofillPredictionSettings",      2 },
                     { L"ChromeSuggestionsSettings",       2 },
                     { L"FindsSettings",                   2 },
-                    { L"ComposeInlineEnabled",            0 },
+                    // Microsoft Edge Copilot & Hubs Sidebar
+                    { L"HubsSidebarEnabled",              0 },
+                    { L"StandaloneHubsSidebarEnabled",    0 },
                     { L"CopilotPageContext",              0 },
                     { L"EdgeEntSearchCopilotInSidebarEnabled", 0 },
                     { L"DiscoverPageContextEnabled",      0 },
-                    { L"SidebarAppSearchEnabled",         0 }
+                    { L"SidebarAppSearchEnabled",         0 },
+                    { L"ComposeInlineEnabled",            0 },
+                    // Brave Leo AI
+                    { L"BraveAIChatEnabled",              0 }
                 };
 
                 int ok = 0;
@@ -338,12 +343,12 @@ bool TweakEngine::ExecuteTweaks(
                 RemoveDirRecursive(browser.userDataDir + L"\\OptimizationHints");
                 RemoveDirRecursive(browser.userDataDir + L"\\Default\\AutofillAiModelCache");
 
-                logCb(L"[✓] AI & Gemini/Copilot killed: " + std::to_wstring(ok) + L" policies enforced across machine and user hives.", L"SUCCESS");
+                logCb(L"[✓] AI & Gemini/Copilot/Leo killed: " + std::to_wstring(ok) + L" policies enforced across machine and user hives.", L"SUCCESS");
                 break;
             }
 
-            case 2: { // Privacy & Content Hardening
-                progCb(pct, L"Enforcing Quad9 DoH & Privacy Guard...");
+            case 2: { // Privacy, Content Hardening & ECH
+                progCb(pct, L"Enforcing Quad9 DoH, ECH & Privacy Guard...");
 
                 WriteDualRegString(p, L"DnsOverHttpsMode", L"automatic");
                 WriteDualRegString(p, L"DnsOverHttpsTemplates", L"https://dns.quad9.net/dns-query");
@@ -351,7 +356,10 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegString(p, L"SSLVersionMin", L"tls1.2");
                 WriteDualRegDword(p, L"HSTSPinningBypassAllowed", 0);
                 WriteDualRegDword(p, L"PostQuantumKeyAgreementEnabled", 1);
+                WriteDualRegDword(p, L"EncryptedClientHelloEnabled", 1);
+                WriteDualRegDword(p, L"PaymentMethodQueryEnabled", 0);
                 WriteDualRegDword(p, L"WebRtcIPHandling", 2);
+                WriteDualRegString(p, L"WebRtcIPHandlingPolicy", L"disable_non_proxied_udp");
                 WriteDualRegDword(p, L"DefaultPopupsSetting", 2);
                 WriteDualRegDword(p, L"DefaultNotificationsSetting", 2);
                 WriteDualRegDword(p, L"DefaultGeolocationSetting", 2);
@@ -361,44 +369,63 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"DefaultFileSystemWriteGuardSetting", 2);
                 WriteDualRegDword(p, L"DefaultSensorsSetting", 2);
                 WriteDualRegDword(p, L"DefaultSerialGuardSetting", 2);
+                WriteDualRegDword(p, L"DefaultHidGuardSetting", 2);
                 WriteDualRegDword(p, L"InsecurePrivateNetworkRequestsAllowed", 0);
                 WriteDualRegDword(p, L"DefaultInsecureContentSetting", 2);
                 WriteDualRegDword(p, L"ReduceAcceptLanguageEnabled", 1);
                 WriteDualRegDword(p, L"RendererCodeIntegrityEnabled", 1);
                 WriteDualRegDword(p, L"ThirdPartyBlockingEnabled", 1);
+                WriteDualRegDword(p, L"QuicAllowed", 1);
+                WriteDualRegDword(p, L"ZstdContentEncodingEnabled", 1);
 
-                logCb(L"[✓] Quad9 DoH, HTTPS-only, WebRTC leak fix & sensor hardening applied.", L"SUCCESS");
+                logCb(L"[✓] Quad9 DoH, ECH encryption, HTTPS-only, WebRTC leak fix & sensor hardening applied.", L"SUCCESS");
                 break;
             }
 
-            case 3: { // Telemetry Suppression & Omnibox Privacy
-                progCb(pct, L"Disabling telemetry, diagnostics & variations...");
+            case 3: { // Telemetry, UKM, Diagnostics & Variations
+                progCb(pct, L"Disabling telemetry, UKM, diagnostics & variations...");
 
                 WriteDualRegDword(p, L"MetricsReportingEnabled", 0);
+                WriteDualRegDword(p, L"UrlKeyedAnonymizedDataCollectionEnabled", 0);
+                WriteDualRegDword(p, L"VariationsRestrictionsByPolicy", 2);
+                WriteDualRegDword(p, L"DeviceMetricsReportingEnabled", 0);
                 WriteDualRegDword(p, L"SafeBrowsingExtendedReportingEnabled", 0);
                 WriteDualRegDword(p, L"SpellCheckServiceEnabled", 0);
                 WriteDualRegDword(p, L"ChromeCleanupEnabled", 0);
                 WriteDualRegDword(p, L"ChromeCleanupReportingEnabled", 0);
                 WriteDualRegDword(p, L"UserFeedbackAllowed", 0);
+                WriteDualRegDword(p, L"FeedbackSurveysEnabled", 0);
                 WriteDualRegDword(p, L"ReportingEnabled", 0);
                 WriteDualRegDword(p, L"CloudReportingEnabled", 0);
                 WriteDualRegDword(p, L"CloudProfileReportingEnabled", 0);
                 WriteDualRegDword(p, L"HeartbeatEnabled", 0);
                 WriteDualRegDword(p, L"SafeBrowsingEnabled", 0);
+                WriteDualRegDword(p, L"SafeBrowsingProtectionLevel", 0);
                 WriteDualRegDword(p, L"ChromeVariations", 2);
-                // Additional Chrome Keystroke & Component telemetry
+                WriteDualRegDword(p, L"CloudManagementEnrollmentMandatory", 0);
+
+                // Keystroke & Component telemetry
                 WriteDualRegDword(p, L"SearchSuggestEnabled", 0);
                 WriteDualRegDword(p, L"AutocompletePrerenderEnabled", 0);
                 WriteDualRegDword(p, L"ComponentUpdatesEnabled", 0);
                 WriteDualRegDword(p, L"DeviceTrustEnabled", 0);
                 WriteDualRegDword(p, L"BrowserLabsEnabled", 0);
-                // Edge telemetry
+
+                // Edge telemetry & cloud services
                 WriteDualRegDword(p, L"DiagnosticData", 0);
                 WriteDualRegDword(p, L"PersonalizationReportingEnabled", 0);
                 WriteDualRegDword(p, L"ShareBrowsingHistory", 0);
                 WriteDualRegDword(p, L"EdgeAssetDeliveryServiceEnabled", 0);
+                WriteDualRegDword(p, L"TyposquattingCheckerEnabled", 0);
+                WriteDualRegDword(p, L"ResolveNavigationErrorsUseWebService", 0);
+                WriteDualRegDword(p, L"AddressBarMicrosoftSearchInBingProviderEnabled", 0);
+                WriteDualRegDword(p, L"VisualSearchEnabled", 0);
+                WriteDualRegDword(p, L"EdgeFollowEnabled", 0);
 
-                logCb(L"[✓] Telemetry, keystroke suggestions & component updaters fully blocked.", L"SUCCESS");
+                // Brave telemetry & analytics
+                WriteDualRegDword(p, L"BraveP3AEnabled", 0);
+
+                logCb(L"[✓] Telemetry, UKM, keystroke suggestions & component updaters fully blocked.", L"SUCCESS");
                 break;
             }
 
@@ -455,8 +482,8 @@ bool TweakEngine::ExecuteTweaks(
                 break;
             }
 
-            case 6: { // Ultra Low-Resource & Process Limits
-                progCb(pct, L"Enforcing Ultra Low-Resource limits (Renderer cap, cache clamp)...");
+            case 6: { // Ultra Low-Resource Limits & Startup Boost
+                progCb(pct, L"Enforcing Ultra Low-Resource limits (Renderer cap, cache clamp, startup boost off)...");
 
                 WriteDualRegDword(p, L"RendererProcessLimit", 4);
                 WriteDualRegDword(p, L"DiskCacheSize", 268435456);
@@ -469,8 +496,10 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"BackgroundModeEnabled", 0);
                 WriteDualRegDword(p, L"BackgroundProcessesEnabled", 0);
                 WriteDualRegDword(p, L"SubresourceFilterEnabled", 1);
+                // Edge: Kill silent 24/7 background pre-launch
+                WriteDualRegDword(p, L"StartupBoostEnabled", 0);
 
-                logCb(L"[✓] Ultra Low-Resource active: 4-Renderer limit, 256MB cache, 5-min tab sleep.", L"SUCCESS");
+                logCb(L"[✓] Ultra Low-Resource active: 4-Renderer limit, 256MB cache, 5-min tab sleep, StartupBoost killed.", L"SUCCESS");
                 break;
             }
 
@@ -506,7 +535,10 @@ bool TweakEngine::ExecuteTweaks(
                     "skia-graphite@1",
                     "tab-discarding@1",
                     "high-efficiency-mode-available@1",
-                    "enable-prerender2@0"
+                    "enable-prerender2@0",
+                    "enable-encrypted-client-hello@1",
+                    "enable-tls13-kyber@1",
+                    "privacy-sandbox-ads-apis@0"
                 };
 
                 int addedFlags = 0;
@@ -546,7 +578,7 @@ bool TweakEngine::ExecuteTweaks(
                 if (out.is_open()) {
                     out << c;
                     out.close();
-                    logCb(L"[✓] High-speed & low-RAM flags injected (QUIC, Zero-Copy, GPU raster, Skia).", L"SUCCESS");
+                    logCb(L"[✓] High-speed & low-RAM flags injected (QUIC, Zero-Copy, GPU raster, Skia, ECH, Kyber).", L"SUCCESS");
                 } else {
                     logCb(L"[!] Could not write Local State.", L"WARNING");
                 }
@@ -566,24 +598,39 @@ bool TweakEngine::ExecuteTweaks(
                 break;
             }
 
-            case 9: { // Commercial & Shopping Bloat Removal
-                progCb(pct, L"Removing shopping, price tracking & commercial bloat...");
+            case 9: { // Commercial, Shopping & Crypto Bloat Removal
+                progCb(pct, L"Removing shopping, price tracking, Brave crypto & commercial bloat...");
 
+                // Universal / Chrome
                 WriteDualRegDword(p, L"CommercePriceTrackingEnabled", 0);
                 WriteDualRegDword(p, L"ShoppingListEnabled", 0);
                 WriteDualRegDword(p, L"PromotionsEnabled", 0);
+                WriteDualRegDword(p, L"AutofillPaymentMethodsEnabled", 0);
+                WriteDualRegDword(p, L"AutofillCreditCardEnabled", 0);
+
+                // Edge Shopping & Wallet
                 WriteDualRegDword(p, L"EdgeShoppingDataEnabled", 0);
                 WriteDualRegDword(p, L"EdgeCollectionsEnabled", 0);
+                WriteDualRegDword(p, L"EdgeWalletEnabled", 0);
                 WriteDualRegDword(p, L"WebWidgetAllowed", 0);
                 WriteDualRegDword(p, L"MathSolverEnabled", 0);
-                WriteDualRegDword(p, L"ResolveNavigationErrorsUseWebService", 0);
+                WriteDualRegDword(p, L"CitationsEnabled", 0);
+                WriteDualRegDword(p, L"EdgeEnhanceImagesEnabled", 0);
+                WriteDualRegDword(p, L"EdgeSuperResolutionEnabled", 0);
 
-                logCb(L"[✓] Shopping price trackers, promotion banners & floating widgets stripped.", L"SUCCESS");
+                // Brave Rewards, Crypto Wallet, VPN & IPFS
+                WriteDualRegDword(p, L"BraveRewardsDisabled", 1);
+                WriteDualRegDword(p, L"BraveWalletDisabled", 1);
+                WriteDualRegDword(p, L"BraveVPNDisabled", 1);
+                WriteDualRegDword(p, L"IPFSResolveMethod", 0);
+                WriteDualRegDword(p, L"TorDisabled", 1);
+
+                logCb(L"[✓] Shopping price trackers, Edge wallet/coupons & Brave crypto/VPN stripped.", L"SUCCESS");
                 break;
             }
 
-            case 10: { // UI Clutter Stripping
-                progCb(pct, L"Stripping UI clutter, Cast & promotion icons...");
+            case 10: { // UI Clutter & Background Features
+                progCb(pct, L"Stripping UI clutter, Cast, news feeds & NTP promos...");
 
                 WriteDualRegDword(p, L"ShowCastIconInToolbar", 0);
                 WriteDualRegDword(p, L"EnableMediaRouter", 0);
@@ -591,13 +638,59 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"SharedClipboardEnabled", 0);
                 WriteDualRegDword(p, L"WebAppInstallByUserEnabled", 0);
                 WriteDualRegDword(p, L"TranslateEnabled", 0);
-                WriteDualRegDword(p, L"AutofillCreditCardEnabled", 0);
                 WriteDualRegDword(p, L"AutofillAddressEnabled", 0);
                 WriteDualRegDword(p, L"NTPCardsVisible", 0);
                 WriteDualRegDword(p, L"LensRegionSearchEnabled", 0);
                 WriteDualRegDword(p, L"SideSearchEnabled", 0);
 
-                logCb(L"[✓] Cast icon, Media Router, Google Lens & NTP news feeds stripped.", L"SUCCESS");
+                // Edge UI & Clickbait News
+                WriteDualRegDword(p, L"NewTabPageContentEnabled", 0);
+                WriteDualRegDword(p, L"NewTabPagePrerenderEnabled", 0);
+                WriteDualRegDword(p, L"WebWidgetAllowed", 0);
+                WriteDualRegDword(p, L"EdgeWorkspacesEnabled", 0);
+                WriteDualRegDword(p, L"ShowRecommendationsEnabled", 0);
+                WriteDualRegDword(p, L"HideFirstRunExperience", 1);
+                WriteDualRegDword(p, L"ShowMicrosoftEdgeLogoActive", 0);
+
+                // Brave Preferences JSON Patching (NTP sponsored images & news)
+                if (browser.id == L"brave") {
+                    std::wstring prefPath = browser.userDataDir + L"\\Default\\Preferences";
+                    if (PathExists(prefPath)) {
+                        std::ifstream in(prefPath, std::ios::binary);
+                        if (in.is_open()) {
+                            std::stringstream ss;
+                            ss << in.rdbuf();
+                            in.close();
+                            std::string prefStr = ss.str();
+                            bool changed = false;
+
+                            auto replaceAll = [&](const std::string& from, const std::string& to) {
+                                size_t pos = 0;
+                                while ((pos = prefStr.find(from, pos)) != std::string::npos) {
+                                    prefStr.replace(pos, from.length(), to);
+                                    pos += to.length();
+                                    changed = true;
+                                }
+                            };
+
+                            replaceAll("\"show_sponsored_images\":true", "\"show_sponsored_images\":false");
+                            replaceAll("\"should_show_on_new_tab\":true", "\"should_show_on_new_tab\":false");
+                            replaceAll("\"show_brave_talk\":true", "\"show_brave_talk\":false");
+                            replaceAll("\"show_together\":true", "\"show_together\":false");
+
+                            if (changed) {
+                                std::ofstream out(prefPath, std::ios::binary | std::ios::trunc);
+                                if (out.is_open()) {
+                                    out << prefStr;
+                                    out.close();
+                                    logCb(L"  [✓] Brave NTP sponsored images and Brave Today news disabled in profile.", L"INFO");
+                                }
+                            }
+                        }
+                    }
+                }
+
+                logCb(L"[✓] Cast icon, Media Router local broadcasting & NTP clickbait feeds stripped.", L"SUCCESS");
                 break;
             }
 
@@ -660,6 +753,9 @@ bool TweakEngine::ExecuteTweaks(
                 } else if (browser.id == L"edge") {
                     ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\Microsoft\\EdgeUpdate\\EdgeUpdateTaskMachineCore\" /Disable", NULL, SW_HIDE);
                     ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\Microsoft\\EdgeUpdate\\EdgeUpdateTaskMachineUA\" /Disable", NULL, SW_HIDE);
+                } else if (browser.id == L"brave") {
+                    ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\BraveSoftware\\Update\\BraveUpdateTaskMachineCore\" /Disable", NULL, SW_HIDE);
+                    ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\BraveSoftware\\Update\\BraveUpdateTaskMachineUA\" /Disable", NULL, SW_HIDE);
                 }
 
                 logCb(L"[✓] 4-layer update lockdown enforced for " + browser.name + L".", L"SUCCESS");

@@ -5,11 +5,12 @@
 #include <functional>
 #include "browser_target.h"
 #include "audit_engine.h"
+#include "network_shield.h"
 
 enum class TweakPreset {
-    Maximum,         // All 13 optimizations & hardening modules
+    Maximum,         // All 14 optimizations & security modules
     Balanced,        // Everyday fast, privacy & low resource
-    PrivacyOnly,     // Anti-telemetry, Privacy Sandbox & DoH focus
+    PrivacyOnly,     // Anti-telemetry, Network Shield & DoH focus
     UltraLowResource // Max RAM savings, renderer limits, cache clamps & tab sleep
 };
 
@@ -18,7 +19,7 @@ struct TweakItem {
     std::wstring category;
     std::wstring title;
     std::wstring description;
-    std::wstring impactTag; // "HIGH IMPACT", "RECOMMENDED", "SAFE", "ULTRA-LOW RAM"
+    std::wstring impactTag; // "HIGH IMPACT", "RECOMMENDED", "SAFE", "ULTRA-LOW RAM", "SHIELD"
     bool enabled;
     bool isChromeOnly;
 };

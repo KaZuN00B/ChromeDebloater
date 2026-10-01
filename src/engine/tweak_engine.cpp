@@ -1,6 +1,7 @@
 #include "tweak_engine.h"
 #include "audit_engine.h"
 #include "sqlite_cleaner.h"
+#include "network_shield.h"
 #include <tlhelp32.h>
 #include <fstream>
 #include <sstream>
@@ -25,7 +26,7 @@ std::vector<TweakItem> TweakEngine::GetAllTweaks() {
         },
         {
             3, L"Privacy", L"Suppress Telemetry & Diagnostics",
-            L"Stops metrics reporting, SafeBrowsing extended telemetry, background cleanup scanner, and Edge diagnostic data.",
+            L"Stops metrics reporting, Omnibox keystroke telemetry, SafeBrowsing extended telemetry, and component updaters.",
             L"RECOMMENDED", true, false
         },
         {
@@ -77,6 +78,11 @@ std::vector<TweakItem> TweakEngine::GetAllTweaks() {
             13, L"Security", L"Permanent 4-Layer Update Lockdown",
             L"Freezes version, disables updater services, disables scheduled tasks, and blocks background updaters (Chrome/Brave/Edge).",
             L"HIGH IMPACT", true, false
+        },
+        {
+            14, L"Network Shield", L"Windows Firewall & Hosts Telemetry Block",
+            L"Enforces Windows Defender Firewall outbound rules and sinkholes Google telemetry domains via Windows hosts file.",
+            L"SHIELD", true, false
         }
     };
 }
@@ -89,13 +95,14 @@ void TweakEngine::ApplyPreset(std::vector<TweakItem>& tweaks, TweakPreset preset
                 break;
             case TweakPreset::Balanced:
                 tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 4 || tw.id == 5 ||
-                              tw.id == 6 || tw.id == 7 || tw.id == 8 || tw.id == 9 || tw.id == 10 || tw.id == 12);
+                              tw.id == 6 || tw.id == 7 || tw.id == 8 || tw.id == 9 || tw.id == 10 ||
+                              tw.id == 12 || tw.id == 14);
                 break;
             case TweakPreset::PrivacyOnly:
-                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 8 || tw.id == 11);
+                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 8 || tw.id == 11 || tw.id == 14);
                 break;
             case TweakPreset::UltraLowResource:
-                tw.enabled = (tw.id == 5 || tw.id == 6 || tw.id == 7 || tw.id == 10 || tw.id == 12);
+                tw.enabled = (tw.id == 5 || tw.id == 6 || tw.id == 7 || tw.id == 10 || tw.id == 12 || tw.id == 14);
                 break;
         }
     }
@@ -219,11 +226,6 @@ static bool VerifyRegDword(HKEY hRoot, const std::wstring& subKey, const std::ws
     return AuditEngine::ReadRegDword(hRoot, subKey, name, val) && (val == expected);
 }
 
-static bool VerifyRegStringContains(HKEY hRoot, const std::wstring& subKey, const std::wstring& name, const std::wstring& fragment) {
-    std::wstring val;
-    return AuditEngine::ReadRegString(hRoot, subKey, name, val) && (val.find(fragment) != std::wstring::npos);
-}
-
 static void DisableServiceByPrefix(const std::wstring& prefix) {
     SC_HANDLE scm = OpenSCManagerW(NULL, NULL, SC_MANAGER_ENUMERATE_SERVICE);
     if (!scm) return;
@@ -284,7 +286,6 @@ bool TweakEngine::ExecuteTweaks(
     const std::wstring& p = browser.policyKey;
     const std::wstring& up = browser.updateKey;
     int step = 0;
-    int failCount = 0;
 
     for (int id : activeTweakIds) {
         step++;
@@ -315,7 +316,6 @@ bool TweakEngine::ExecuteTweaks(
                     { L"AutofillPredictionSettings",      2 },
                     { L"ChromeSuggestionsSettings",       2 },
                     { L"FindsSettings",                   2 },
-                    // Edge Copilot policies
                     { L"ComposeInlineEnabled",            0 },
                     { L"CopilotPageContext",              0 },
                     { L"EdgeEntSearchCopilotInSidebarEnabled", 0 },
@@ -332,7 +332,6 @@ bool TweakEngine::ExecuteTweaks(
                     }
                 }
 
-                // Purge disk model stores
                 RemoveDirRecursive(browser.userDataDir + L"\\OnDeviceHeadSuggestModel");
                 RemoveDirRecursive(browser.userDataDir + L"\\optimization_guide_model_store");
                 RemoveDirRecursive(browser.userDataDir + L"\\OptimizationGuideModelsManifest");
@@ -372,7 +371,7 @@ bool TweakEngine::ExecuteTweaks(
                 break;
             }
 
-            case 3: { // Telemetry Suppression
+            case 3: { // Telemetry Suppression & Omnibox Privacy
                 progCb(pct, L"Disabling telemetry, diagnostics & variations...");
 
                 WriteDualRegDword(p, L"MetricsReportingEnabled", 0);
@@ -387,13 +386,19 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"HeartbeatEnabled", 0);
                 WriteDualRegDword(p, L"SafeBrowsingEnabled", 0);
                 WriteDualRegDword(p, L"ChromeVariations", 2);
-                // Edge telemetry policies
+                // Additional Chrome Keystroke & Component telemetry
+                WriteDualRegDword(p, L"SearchSuggestEnabled", 0);
+                WriteDualRegDword(p, L"AutocompletePrerenderEnabled", 0);
+                WriteDualRegDword(p, L"ComponentUpdatesEnabled", 0);
+                WriteDualRegDword(p, L"DeviceTrustEnabled", 0);
+                WriteDualRegDword(p, L"BrowserLabsEnabled", 0);
+                // Edge telemetry
                 WriteDualRegDword(p, L"DiagnosticData", 0);
                 WriteDualRegDword(p, L"PersonalizationReportingEnabled", 0);
                 WriteDualRegDword(p, L"ShareBrowsingHistory", 0);
                 WriteDualRegDword(p, L"EdgeAssetDeliveryServiceEnabled", 0);
 
-                logCb(L"[✓] Telemetry, diagnostics & experiment rollouts fully blocked.", L"SUCCESS");
+                logCb(L"[✓] Telemetry, keystroke suggestions & component updaters fully blocked.", L"SUCCESS");
                 break;
             }
 
@@ -442,8 +447,7 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"TabHoverCardImages", 0);
                 WriteDualRegDword(p, L"BackgroundModeEnabled", 0);
                 WriteDualRegDword(p, L"NetworkPredictionOptions", 2);
-
-                // Edge Sleeping Tabs
+                WriteDualRegDword(p, L"PageDiscardingEnabled", 1);
                 WriteDualRegDword(p, L"SleepingTabsEnabled", 1);
                 WriteDualRegDword(p, L"EfficiencyModeEnabled", 1);
 
@@ -454,22 +458,16 @@ bool TweakEngine::ExecuteTweaks(
             case 6: { // Ultra Low-Resource & Process Limits
                 progCb(pct, L"Enforcing Ultra Low-Resource limits (Renderer cap, cache clamp)...");
 
-                // Clamp renderer processes so browser cannot overwhelm system RAM
                 WriteDualRegDword(p, L"RendererProcessLimit", 4);
-                // Clamp disk cache to 256MB and media cache to 128MB
                 WriteDualRegDword(p, L"DiskCacheSize", 268435456);
                 WriteDualRegDword(p, L"MediaCacheSize", 134217728);
-                // Discard inactive tabs in 5 minutes
                 WriteDualRegDword(p, L"HighEfficiencyModeTimeBeforeDiscardInMinutes", 5);
                 WriteDualRegDword(p, L"SleepingTabsTimeoutMinutes", 5);
-                // Disable pre-rendering & speculative network connections
                 WriteDualRegDword(p, L"NetworkPredictionOptions", 2);
                 WriteDualRegDword(p, L"NetworkPredictionEnabled", 0);
                 WriteDualRegDword(p, L"Prerender2", 0);
-                // Never run in background when window is closed
                 WriteDualRegDword(p, L"BackgroundModeEnabled", 0);
                 WriteDualRegDword(p, L"BackgroundProcessesEnabled", 0);
-                // Enable built-in subresource filter for deceptive/heavy ads
                 WriteDualRegDword(p, L"SubresourceFilterEnabled", 1);
 
                 logCb(L"[✓] Ultra Low-Resource active: 4-Renderer limit, 256MB cache, 5-min tab sleep.", L"SUCCESS");
@@ -574,7 +572,6 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"CommercePriceTrackingEnabled", 0);
                 WriteDualRegDword(p, L"ShoppingListEnabled", 0);
                 WriteDualRegDword(p, L"PromotionsEnabled", 0);
-                // Edge shopping & widgets
                 WriteDualRegDword(p, L"EdgeShoppingDataEnabled", 0);
                 WriteDualRegDword(p, L"EdgeCollectionsEnabled", 0);
                 WriteDualRegDword(p, L"WebWidgetAllowed", 0);
@@ -595,6 +592,7 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"WebAppInstallByUserEnabled", 0);
                 WriteDualRegDword(p, L"TranslateEnabled", 0);
                 WriteDualRegDword(p, L"AutofillCreditCardEnabled", 0);
+                WriteDualRegDword(p, L"AutofillAddressEnabled", 0);
                 WriteDualRegDword(p, L"NTPCardsVisible", 0);
                 WriteDualRegDword(p, L"LensRegionSearchEnabled", 0);
                 WriteDualRegDword(p, L"SideSearchEnabled", 0);
@@ -625,7 +623,6 @@ bool TweakEngine::ExecuteTweaks(
             case 13: { // Permanent 4-Layer Update Lockdown
                 progCb(pct, L"Enforcing 4-layer update lockdown across services & policies...");
 
-                // Layer 1: Universal registry policies (HKLM + HKCU)
                 WriteDualRegDword(up, L"UpdateDefault", 0);
                 WriteDualRegDword(up, L"AutoUpdateCheckPeriodMinutes", 0);
                 WriteDualRegDword(up, L"DisableAutoUpdateChecksCheckboxValue", 1);
@@ -640,7 +637,6 @@ bool TweakEngine::ExecuteTweaks(
                     }
                 }
 
-                // Layer 2: Updater Services Lockdown
                 if (browser.id == L"chrome") {
                     DisableServiceByPrefix(L"GoogleUpdater");
                     DisableServiceByPrefix(L"GoogleUpdate");
@@ -657,7 +653,6 @@ bool TweakEngine::ExecuteTweaks(
                     logCb(L"  [✓] Edge Updater services stopped & disabled.", L"INFO");
                 }
 
-                // Layer 3: Scheduled Tasks Lockdown
                 if (browser.id == L"chrome") {
                     ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\GoogleSystem\\GoogleUpdater\\GoogleUpdaterTaskSystem\" /Disable", NULL, SW_HIDE);
                     ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\Google\\GoogleUpdateTaskMachineCore\" /Disable", NULL, SW_HIDE);
@@ -668,6 +663,12 @@ bool TweakEngine::ExecuteTweaks(
                 }
 
                 logCb(L"[✓] 4-layer update lockdown enforced for " + browser.name + L".", L"SUCCESS");
+                break;
+            }
+
+            case 14: { // Network Shield (Firewall & Hosts File Blocklist)
+                progCb(pct, L"Engaging Windows Firewall & Hosts Network Shield...");
+                NetworkShield::EnableAll(browser, logCb);
                 break;
             }
         }
@@ -691,7 +692,6 @@ bool TweakEngine::RunDeepClean(
         return false;
     }
 
-    // 1. Vacuum SQLite databases
     SQLiteCleaner sqlite;
     if (sqlite.IsAvailable()) {
         std::vector<std::wstring> dbs = {
@@ -712,7 +712,6 @@ bool TweakEngine::RunDeepClean(
         logCb(L"[i] SQLite cleaner unavailable (winsqlite3.dll not found).", L"INFO");
     }
 
-    // 2. Cache purge
     INT64 cacheBefore = 0;
     cacheBefore += AuditEngine::CalculateDirectorySize(browser.userDataDir + L"\\Default\\GPUCache");
     cacheBefore += AuditEngine::CalculateDirectorySize(browser.userDataDir + L"\\Default\\DawnCache");
@@ -733,16 +732,8 @@ bool TweakEngine::RunDeepClean(
         logCb(L"[✓] GPU & shader caches already clean.", L"INFO");
     }
 
-    // 3. Flush Windows DNS
-    HMODULE hDns = LoadLibraryW(L"dnsapi.dll");
-    if (hDns) {
-        auto pFlush = (DnsFlushResolverCacheFn)GetProcAddress(hDns, "DnsFlushResolverCache");
-        if (pFlush) {
-            pFlush();
-            logCb(L"[✓] Windows DNS resolver cache flushed.", L"SUCCESS");
-        }
-        FreeLibrary(hDns);
-    }
+    NetworkShield::FlushDns();
+    logCb(L"[✓] Windows DNS resolver cache flushed.", L"SUCCESS");
 
     return true;
 }

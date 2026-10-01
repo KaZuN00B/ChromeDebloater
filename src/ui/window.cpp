@@ -24,15 +24,15 @@ bool AppWindow::InitializeAndShow(HINSTANCE hInstance, int nCmdShow) {
 
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int winW = 1080;
-    int winH = 720;
+    int winW = 1120;
+    int winH = 740;
     int winX = (screenW - winW) / 2;
     int winY = (screenH - winH) / 2;
 
     HWND hwnd = CreateWindowExW(
         0,
         wc.lpszClassName,
-        L"ChromeDebloater Pro — Native Chromium Hardening & Optimizer",
+        L"ChromeDebloater Pro — Native Chromium Hardening & Network Shield",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         winX, winY, winW, winH,
         NULL, NULL, hInstance, NULL
@@ -128,6 +128,7 @@ LRESULT CALLBACK AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 pThis->m_isBusy = false;
                 pThis->RunAuditAsync();
                 pThis->RunCheckUpdatesAsync();
+                pThis->RunCheckShieldAsync();
                 InvalidateRect(hwnd, NULL, FALSE);
             }
             return 0;
@@ -152,6 +153,18 @@ LRESULT CALLBACK AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                     pThis->m_updateInfos = *pInfos;
                     delete pInfos;
                     pThis->m_isCheckingUpdates = false;
+                    InvalidateRect(hwnd, NULL, FALSE);
+                }
+            }
+            return 0;
+        }
+
+        case WM_APP_SHIELD_DONE: {
+            if (pThis) {
+                NetworkShieldStatus* pSt = (NetworkShieldStatus*)lParam;
+                if (pSt) {
+                    pThis->m_shieldStatus = *pSt;
+                    delete pSt;
                     InvalidateRect(hwnd, NULL, FALSE);
                 }
             }
@@ -187,11 +200,12 @@ void AppWindow::OnInit(HWND hwnd) {
     m_tweaks = TweakEngine::GetAllTweaks();
     m_snapshots = BackupEngine::ListSnapshots();
 
-    AddLog(L"ChromeDebloater Pro Native v3.2 started.", L"INFO");
-    AddLog(L"Universal Chromium Compatibility Engine Loaded (Chrome, Brave, Edge).", L"INFO");
+    AddLog(L"ChromeDebloater Pro Native v3.3 started.", L"INFO");
+    AddLog(L"Universal Chromium Compatibility & Windows Network Shield Initialized.", L"INFO");
 
     RunAuditAsync();
     RunCheckUpdatesAsync();
+    RunCheckShieldAsync();
 }
 
 void AppWindow::OnDestroy() {
@@ -254,6 +268,7 @@ void AppWindow::OnPaint(HDC hdc) {
     switch (m_currentPage) {
         case NavPage::Dashboard: RenderDashboard(g, contentRect); break;
         case NavPage::Tweaks:    RenderTweaks(g, contentRect); break;
+        case NavPage::Shield:    RenderShield(g, contentRect); break;
         case NavPage::Cleaner:   RenderCleaner(g, contentRect); break;
         case NavPage::Updates:   RenderUpdates(g, contentRect); break;
         case NavPage::Backups:   RenderBackups(g, contentRect); break;
@@ -276,16 +291,16 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
 
     // Header
     SolidBrush titleBrush(Theme::TextPrimary);
-    g.DrawString(L"🛡 ChromeDebloater", -1, m_fTitle, PointF(20.0f, 20.0f), &titleBrush);
+    g.DrawString(L"🛡 ChromeDebloater", -1, m_fTitle, PointF(20.0f, 18.0f), &titleBrush);
 
     SolidBrush verBrush(Theme::TextMuted);
-    g.DrawString(L"v3.2 Pro · Multi-Browser Hardener", -1, m_fSmall, PointF(22.0f, 44.0f), &verBrush);
+    g.DrawString(L"v3.3 Pro · Shield & Optimizer", -1, m_fSmall, PointF(22.0f, 42.0f), &verBrush);
 
-    RectF adminBadge(20.0f, 68.0f, 130.0f, 22.0f);
-    RenderUtils::DrawBadge(g, adminBadge, L"●  ADMINISTRATOR", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
+    RectF adminBadge(20.0f, 64.0f, 134.0f, 22.0f);
+    RenderUtils::DrawBadge(g, adminBadge, L"●  ADMIN ELEVATED", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
 
     // Browser Target Selector
-    RectF browCard(16.0f, 104.0f, rect.Width - 32.0f, 78.0f);
+    RectF browCard(16.0f, 98.0f, rect.Width - 32.0f, 76.0f);
     RenderUtils::DrawCard(g, browCard, Theme::BgCard, Theme::BorderSubtle, 6.0f);
 
     SolidBrush lblBrush(Theme::TextMuted);
@@ -294,7 +309,7 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
     float btnW = (browCard.Width - 24.0f) / 3.0f;
     const wchar_t* bNames[] = { L"Chrome", L"Brave", L"Edge" };
     for (int i = 0; i < 3; ++i) {
-        RectF bPill(browCard.X + 12.0f + i * btnW, browCard.Y + 30.0f, btnW - 4.0f, 32.0f);
+        RectF bPill(browCard.X + 12.0f + i * btnW, browCard.Y + 28.0f, btnW - 4.0f, 32.0f);
         bool isSel = (m_selectedBrowserIdx == i);
         Color pillBg = isSel ? Theme::AccentBlue : Theme::BgCardHover;
         Color pillTxt = isSel ? Color(255, 255, 255, 255) : Theme::TextSecondary;
@@ -309,20 +324,21 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
         g.DrawString(bNames[i], -1, m_fSmall, bPill, &sf, &pillTxtBrush);
     }
 
-    // Navigation Items (6 pages)
-    float navY = 196.0f;
-    float navH = 38.0f;
+    // Navigation Items (7 items)
+    float navY = 188.0f;
+    float navH = 36.0f;
     const wchar_t* navLabels[] = {
         L"📊  Dashboard",
         L"⚡  Optimizations",
+        L"🛡  Network Shield",
         L"🧹  Deep Cleaner",
         L"🌐  Browser Updates",
         L"🔄  Backups & Restore",
         L"📜  Activity Console"
     };
 
-    for (int i = 0; i < 6; ++i) {
-        RectF navItem(16.0f, navY + i * (navH + 6.0f), rect.Width - 32.0f, navH);
+    for (int i = 0; i < 7; ++i) {
+        RectF navItem(16.0f, navY + i * (navH + 5.0f), rect.Width - 32.0f, navH);
         bool isActive = ((int)m_currentPage == i);
 
         if (isActive) {
@@ -344,11 +360,11 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
     RenderUtils::DrawCard(g, statusCard, Theme::BgCard, Theme::BorderSubtle, 6.0f);
 
     SolidBrush statTitle(Theme::TextPrimary);
-    g.DrawString(L"System Health", -1, m_fBold, PointF(statusCard.X + 12.0f, statusCard.Y + 8.0f), &statTitle);
+    g.DrawString(L"Protection Status", -1, m_fBold, PointF(statusCard.X + 12.0f, statusCard.Y + 8.0f), &statTitle);
 
-    std::wstring ramSaved = L"Whitespace: " + std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB";
+    std::wstring shieldShort = m_shieldStatus.hostsBlockActive ? L"Shield Active · Telemetry Sunk" : L"Shield Inactive";
     SolidBrush statDesc(Theme::TextMuted);
-    g.DrawString(ramSaved.c_str(), -1, m_fSmall, PointF(statusCard.X + 12.0f, statusCard.Y + 28.0f), &statDesc);
+    g.DrawString(shieldShort.c_str(), -1, m_fSmall, PointF(statusCard.X + 12.0f, statusCard.Y + 28.0f), &statDesc);
 
     std::wstring statusStr = m_isBusy ? (L"● " + m_progressAction) : L"● Engine Idle";
     SolidBrush statInd(m_isBusy ? Theme::WarningOrange : Theme::SuccessGreen);
@@ -378,9 +394,9 @@ void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
     }
 
     SolidBrush titleBrush(Theme::TextPrimary);
-    g.DrawString(L"System & Browser Health Dashboard", -1, m_fTitle, PointF(startX, startY), &titleBrush);
+    g.DrawString(L"System & Browser Security Dashboard", -1, m_fTitle, PointF(startX, startY), &titleBrush);
 
-    std::wstring sub = L"Active Profile: " + m_browsers[m_selectedBrowserIdx].name;
+    std::wstring sub = L"Active Target: " + m_browsers[m_selectedBrowserIdx].name;
     if (!m_browsers[m_selectedBrowserIdx].version.empty()) {
         sub += L" (v" + m_browsers[m_selectedBrowserIdx].version + L")";
     }
@@ -388,53 +404,63 @@ void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
     g.DrawString(sub.c_str(), -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
     // 1. Health Score Gauge
-    RectF gaugeRect(startX, startY + 56.0f, contentW, 96.0f);
+    RectF gaugeRect(startX, startY + 54.0f, contentW, 96.0f);
     RenderUtils::DrawScoreGauge(g, gaugeRect, m_auditReport.score, m_fBold, m_fScore);
 
-    // 2. Three Metric Cards Row
-    float cardY = startY + 162.0f;
-    float cardW = (contentW - 24.0f) / 3.0f;
+    // 2. Four Metric Cards Row
+    float cardY = startY + 160.0f;
+    float cardW = (contentW - 36.0f) / 4.0f;
     float cardH = 76.0f;
 
-    // Card 1
+    // Metric 1: Hardened Policies
     RectF m1(startX, cardY, cardW, cardH);
     RenderUtils::DrawCard(g, m1, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"HARDENED POLICIES", -1, m_fSmall, PointF(m1.X + 14.0f, m1.Y + 10.0f), &subBrush);
-    std::wstring polStr = std::to_wstring(m_auditReport.optimizedCount) + L" Protected";
-    g.DrawString(polStr.c_str(), -1, m_fBold, PointF(m1.X + 14.0f, m1.Y + 32.0f), &titleBrush);
+    g.DrawString(L"PROTECTED POLICIES", -1, m_fSmall, PointF(m1.X + 12.0f, m1.Y + 10.0f), &subBrush);
+    std::wstring polStr = std::to_wstring(m_auditReport.optimizedCount) + L" Subsystems";
+    g.DrawString(polStr.c_str(), -1, m_fBold, PointF(m1.X + 12.0f, m1.Y + 32.0f), &titleBrush);
 
-    // Card 2
+    // Metric 2: Network Shield
     RectF m2(startX + cardW + 12.0f, cardY, cardW, cardH);
     RenderUtils::DrawCard(g, m2, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"AI & GEMINI INTEGRATION", -1, m_fSmall, PointF(m2.X + 14.0f, m2.Y + 10.0f), &subBrush);
-    SolidBrush aiStBrush(m_auditReport.score >= 80 ? Theme::SuccessGreen : Theme::WarningOrange);
-    g.DrawString(m_auditReport.score >= 80 ? L"Eliminated (0 Active)" : L"Action Needed", -1, m_fBold, PointF(m2.X + 14.0f, m2.Y + 32.0f), &aiStBrush);
+    g.DrawString(L"NETWORK SHIELD", -1, m_fSmall, PointF(m2.X + 12.0f, m2.Y + 10.0f), &subBrush);
+    SolidBrush shBrush(m_shieldStatus.hostsBlockActive ? Theme::SuccessGreen : Theme::WarningOrange);
+    g.DrawString(m_shieldStatus.hostsBlockActive ? L"Firewall & Hosts ON" : L"Shield Inactive", -1, m_fBold, PointF(m2.X + 12.0f, m2.Y + 32.0f), &shBrush);
 
-    // Card 3
+    // Metric 3: AI Subsystems
     RectF m3(startX + (cardW + 12.0f) * 2.0f, cardY, cardW, cardH);
     RenderUtils::DrawCard(g, m3, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"RECLAIMABLE CACHE", -1, m_fSmall, PointF(m3.X + 14.0f, m3.Y + 10.0f), &subBrush);
-    std::wstring spaceStr = std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB Cleanup Whitespace";
-    g.DrawString(spaceStr.c_str(), -1, m_fBold, PointF(m3.X + 14.0f, m3.Y + 32.0f), &titleBrush);
+    g.DrawString(L"AI & GEMINI ENGINE", -1, m_fSmall, PointF(m3.X + 12.0f, m3.Y + 10.0f), &subBrush);
+    SolidBrush aiStBrush(m_auditReport.score >= 80 ? Theme::SuccessGreen : Theme::WarningOrange);
+    g.DrawString(m_auditReport.score >= 80 ? L"Eliminated (0 Active)" : L"Action Needed", -1, m_fBold, PointF(m3.X + 12.0f, m3.Y + 32.0f), &aiStBrush);
 
-    // 3. Quick Action Buttons
-    float actY = startY + 250.0f;
-    RectF btn1(startX, actY, 240.0f, 42.0f);
+    // Metric 4: Reclaimable Space
+    RectF m4(startX + (cardW + 12.0f) * 3.0f, cardY, cardW, cardH);
+    RenderUtils::DrawCard(g, m4, Theme::BgCard, Theme::BorderSubtle, 8.0f);
+    g.DrawString(L"RECLAIMABLE SPACE", -1, m_fSmall, PointF(m4.X + 12.0f, m4.Y + 10.0f), &subBrush);
+    std::wstring spaceStr = std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB Whitespace";
+    g.DrawString(spaceStr.c_str(), -1, m_fBold, PointF(m4.X + 12.0f, m4.Y + 32.0f), &titleBrush);
+
+    // 3. Quick Action Buttons Row
+    float actY = startY + 248.0f;
+    RectF btn1(startX, actY, 230.0f, 42.0f);
     RenderUtils::DrawGradientButton(g, btn1, L"🚀  Apply Maximum Preset", false, false, m_fBold, !m_isBusy);
 
-    RectF btn2(startX + 252.0f, actY, 240.0f, 42.0f);
-    RenderUtils::DrawGradientButton(g, btn2, L"🧊  Apply Ultra-Low RAM", false, false, m_fBold, !m_isBusy);
+    RectF btn2(startX + 242.0f, actY, 230.0f, 42.0f);
+    RenderUtils::DrawGradientButton(g, btn2, L"🛡🔥  Engage Network Shield", false, false, m_fBold, !m_isBusy);
 
-    RectF btn3(startX + 504.0f, actY, 180.0f, 42.0f);
-    RenderUtils::DrawCard(g, btn3, Theme::BgCard, Theme::BorderSubtle, 8.0f);
+    RectF btn3(startX + 484.0f, actY, 200.0f, 42.0f);
+    RenderUtils::DrawGradientButton(g, btn3, L"🧊  Ultra-Low RAM", false, false, m_fBold, !m_isBusy);
+
+    RectF btn4(startX + 696.0f, actY, 130.0f, 42.0f);
+    RenderUtils::DrawCard(g, btn4, Theme::BgCard, Theme::BorderSubtle, 8.0f);
     StringFormat sfCenter;
     sfCenter.SetAlignment(StringAlignmentCenter);
     sfCenter.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"🌐  Check Updates", -1, m_fBold, btn3, &sfCenter, &titleBrush);
+    g.DrawString(L"🧹 Clean", -1, m_fBold, btn4, &sfCenter, &titleBrush);
 
     // 4. Audit Checklist Table
-    float listY = startY + 308.0f;
-    g.DrawString(L"BROWSER AUDIT & HARDENING FINDINGS", -1, m_fSmall, PointF(startX, listY), &subBrush);
+    float listY = startY + 306.0f;
+    g.DrawString(L"SECURITY AUDIT & HARDENING FINDINGS", -1, m_fSmall, PointF(startX, listY), &subBrush);
 
     float itemY = listY + 20.0f;
     for (size_t i = 0; i < m_auditReport.items.size() && i < 5; ++i) {
@@ -460,16 +486,102 @@ void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
     }
 }
 
+void AppWindow::RenderShield(Graphics& g, const RectF& rect) {
+    float startX = rect.X + 28.0f;
+    float startY = 24.0f;
+    float contentW = rect.Width - 56.0f;
+
+    SolidBrush titleBrush(Theme::TextPrimary);
+    g.DrawString(L"Windows Firewall & Hosts Network Shield", -1, m_fTitle, PointF(startX, startY), &titleBrush);
+
+    SolidBrush subBrush(Theme::TextSecondary);
+    g.DrawString(L"Kernel-level blocking of Google telemetry, crashpad memory dumps, and tracking domains", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+
+    // Master Action Bar
+    float by = startY + 56.0f;
+    RectF actAllBtn(startX, by, 320.0f, 42.0f);
+    RenderUtils::DrawGradientButton(g, actAllBtn, L"🛡🔥  ENABLE FULL NETWORK SHIELD", false, false, m_fBold, !m_isBusy);
+
+    RectF disAllBtn(startX + 332.0f, by, 220.0f, 42.0f);
+    RenderUtils::DrawCard(g, disAllBtn, Theme::BgCard, Theme::BorderSubtle, 8.0f);
+    StringFormat sfCenter;
+    sfCenter.SetAlignment(StringAlignmentCenter);
+    sfCenter.SetLineAlignment(StringAlignmentCenter);
+    g.DrawString(L"🔓  Restore Network Rules", -1, m_fBold, disAllBtn, &sfCenter, &titleBrush);
+
+    // Two Detailed Cards
+    float cardY = by + 56.0f;
+    float cardH = 150.0f;
+
+    // Card 1: Windows Hosts File Sinkhole
+    RectF c1(startX, cardY, contentW, cardH);
+    RenderUtils::DrawCard(g, c1, Theme::BgCard, Theme::BorderSubtle, 8.0f);
+
+    g.DrawString(L"🌐  Windows Hosts File Telemetry Sinkhole", -1, m_fBold, PointF(c1.X + 16.0f, c1.Y + 14.0f), &titleBrush);
+
+    RectF badge1(c1.X + c1.Width - 170.0f, c1.Y + 14.0f, 154.0f, 24.0f);
+    if (m_shieldStatus.hostsBlockActive) {
+        RenderUtils::DrawBadge(g, badge1, L"● ACTIVE (SINKHOLED)", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
+    } else {
+        RenderUtils::DrawBadge(g, badge1, L"● INACTIVE", Theme::WarningBadge, Theme::WarningOrange, m_fSmall);
+    }
+
+    std::wstring hDesc = L"Redirects known Google telemetry, crashpad, analytics, and experiment domains to 0.0.0.0 (null route).\n"
+                         L"Domains blocked: telemetry.google.com, crashpad.google.com, variations.google.com, google-analytics.com,\n"
+                         L"optimizationguide-pa.googleapis.com, adservice.google.com, doubleclick.net, and 20+ tracking endpoints.";
+    g.DrawString(hDesc.c_str(), -1, m_fSmall, PointF(c1.X + 16.0f, c1.Y + 44.0f), &subBrush);
+
+    RectF btnHOn(c1.X + 16.0f, c1.Y + 104.0f, 160.0f, 32.0f);
+    RenderUtils::DrawGradientButton(g, btnHOn, L"🛡 Block via Hosts", false, false, m_fSmall, !m_isBusy);
+
+    RectF btnHOff(c1.X + 186.0f, c1.Y + 104.0f, 160.0f, 32.0f);
+    RenderUtils::DrawCard(g, btnHOff, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
+    g.DrawString(L"🔓 Restore Hosts", -1, m_fSmall, btnHOff, &sfCenter, &subBrush);
+
+    // Card 2: Windows Defender Firewall Outbound Rules
+    RectF c2(startX, cardY + cardH + 16.0f, contentW, cardH);
+    RenderUtils::DrawCard(g, c2, Theme::BgCard, Theme::BorderSubtle, 8.0f);
+
+    g.DrawString(L"🔥  Windows Defender Firewall Outbound Block Rules", -1, m_fBold, PointF(c2.X + 16.0f, c2.Y + 14.0f), &titleBrush);
+
+    RectF badge2(c2.X + c2.Width - 170.0f, c2.Y + 14.0f, 154.0f, 24.0f);
+    if (m_shieldStatus.firewallBlockActive) {
+        RenderUtils::DrawBadge(g, badge2, L"● ACTIVE (FIREWALL ON)", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
+    } else {
+        RenderUtils::DrawBadge(g, badge2, L"● INACTIVE", Theme::WarningBadge, Theme::WarningOrange, m_fSmall);
+    }
+
+    std::wstring fDesc = L"Enforces Windows Filtering Platform (WFP) outbound block rules against updater and telemetry executables.\n"
+                         L"Executable targets: GoogleUpdate.exe, GoogleUpdater.exe, crashpad_handler.exe, MicrosoftEdgeUpdate.exe,\n"
+                         L"and BraveUpdate.exe — completely blocking unauthorized outbound background communication.";
+    g.DrawString(fDesc.c_str(), -1, m_fSmall, PointF(c2.X + 16.0f, c2.Y + 44.0f), &subBrush);
+
+    RectF btnFOn(c2.X + 16.0f, c2.Y + 104.0f, 160.0f, 32.0f);
+    RenderUtils::DrawGradientButton(g, btnFOn, L"🔥 Enable Firewall Rules", false, false, m_fSmall, !m_isBusy);
+
+    RectF btnFOff(c2.X + 186.0f, c2.Y + 104.0f, 160.0f, 32.0f);
+    RenderUtils::DrawCard(g, btnFOff, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
+    g.DrawString(L"🔓 Remove Firewall Rules", -1, m_fSmall, btnFOff, &sfCenter, &subBrush);
+
+    // Live Status Summary
+    float stY = cardY + cardH * 2.0f + 32.0f;
+    RectF stBar(startX, stY, contentW, 40.0f);
+    RenderUtils::DrawCard(g, stBar, Theme::BgInput, Theme::BorderSubtle, 6.0f);
+    std::wstring liveSt = L"● Current Protection State: " + m_shieldStatus.statusSummary;
+    SolidBrush liveBrush(m_shieldStatus.hostsBlockActive ? Theme::SuccessGreen : Theme::WarningOrange);
+    g.DrawString(liveSt.c_str(), -1, m_fSmall, PointF(stBar.X + 14.0f, stBar.Y + 12.0f), &liveBrush);
+}
+
 void AppWindow::RenderTweaks(Graphics& g, const RectF& rect) {
     float startX = rect.X + 28.0f;
     float startY = 24.0f;
     float contentW = rect.Width - 56.0f;
 
     SolidBrush titleBrush(Theme::TextPrimary);
-    g.DrawString(L"Hardening & Optimization Modules", -1, m_fTitle, PointF(startX, startY), &titleBrush);
+    g.DrawString(L"Hardening & Optimization Modules (14 Subsystems)", -1, m_fTitle, PointF(startX, startY), &titleBrush);
 
     SolidBrush subBrush(Theme::TextSecondary);
-    g.DrawString(L"Granular enterprise policies, memory clamps & performance flags", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+    g.DrawString(L"Granular enterprise policies, memory clamps, network shield & performance flags", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
     if (m_isBusy) {
         float pbY = startY + 48.0f;
@@ -583,7 +695,6 @@ void AppWindow::RenderUpdates(Graphics& g, const RectF& rect) {
     SolidBrush subBrush(Theme::TextSecondary);
     g.DrawString(L"Live upstream release checking and permanent update lockdown for Chrome, Brave, and Edge", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
-    // Refresh Action Button
     float by = startY + 56.0f;
     RectF checkBtn(startX, by, 280.0f, 38.0f);
     RenderUtils::DrawGradientButton(
@@ -592,7 +703,6 @@ void AppWindow::RenderUpdates(Graphics& g, const RectF& rect) {
         false, false, m_fBold, !m_isCheckingUpdates
     );
 
-    // Render 3 Browser Update Cards
     float cardY = by + 52.0f;
     float cardH = 110.0f;
 
@@ -610,21 +720,17 @@ void AppWindow::RenderUpdates(Graphics& g, const RectF& rect) {
             info.statusText = L"Querying upstream status...";
         }
 
-        // Browser Name & Icon
         g.DrawString(info.browserName.c_str(), -1, m_fBold, PointF(uCard.X + 16.0f, uCard.Y + 14.0f), &titleBrush);
 
-        // Version line
         std::wstring verLine = L"Installed: " + (info.isInstalled ? (L"v" + info.installedVersion) : L"Not Detected");
         if (!info.latestVersion.empty()) {
             verLine += L"   ·   Upstream Stable: v" + info.latestVersion;
         }
         g.DrawString(verLine.c_str(), -1, m_fSmall, PointF(uCard.X + 16.0f, uCard.Y + 40.0f), &subBrush);
 
-        // Status Text
         SolidBrush stBrush(info.isUpdateLocked ? Theme::SuccessGreen : Theme::AccentBlue);
         g.DrawString(info.statusText.c_str(), -1, m_fSmall, PointF(uCard.X + 16.0f, uCard.Y + 68.0f), &stBrush);
 
-        // Status Badge (Top Right)
         RectF badgeRc(uCard.X + uCard.Width - 170.0f, uCard.Y + 14.0f, 154.0f, 24.0f);
         if (!info.isInstalled) {
             RenderUtils::DrawBadge(g, badgeRc, L"NOT DETECTED", Theme::BgCardHover, Theme::TextMuted, m_fSmall);
@@ -636,7 +742,6 @@ void AppWindow::RenderUpdates(Graphics& g, const RectF& rect) {
             RenderUtils::DrawBadge(g, badgeRc, L"● UPDATE PENDING", Theme::WarningBadge, Theme::WarningOrange, m_fSmall);
         }
 
-        // Action Buttons: Lock vs Unlock
         if (info.isInstalled) {
             RectF lockBtn(uCard.X + uCard.Width - 280.0f, uCard.Y + 54.0f, 130.0f, 36.0f);
             RenderUtils::DrawCard(g, lockBtn, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
@@ -780,30 +885,31 @@ void AppWindow::OnMouseWheel(short delta) {
     if (m_currentPage == NavPage::Tweaks) {
         m_tweakScrollY -= (delta / 2);
         if (m_tweakScrollY < 0) m_tweakScrollY = 0;
-        if (m_tweakScrollY > 400) m_tweakScrollY = 400;
+        if (m_tweakScrollY > 450) m_tweakScrollY = 450;
         InvalidateRect(m_hwnd, NULL, FALSE);
     }
 }
 
 void AppWindow::OnLButtonDown(int x, int y) {
     // 1. Sidebar Browser Picker
-    RectF browCard(16.0f, 104.0f, 208.0f, 78.0f);
-    if (x >= browCard.X && x <= browCard.X + browCard.Width && y >= browCard.Y + 30.0f && y <= browCard.Y + 62.0f) {
+    RectF browCard(16.0f, 98.0f, 208.0f, 76.0f);
+    if (x >= browCard.X && x <= browCard.X + browCard.Width && y >= browCard.Y + 28.0f && y <= browCard.Y + 60.0f) {
         float btnW = (browCard.Width - 24.0f) / 3.0f;
         int clickedIdx = (int)((x - (browCard.X + 12.0f)) / btnW);
         if (clickedIdx >= 0 && clickedIdx < 3 && clickedIdx != m_selectedBrowserIdx) {
             m_selectedBrowserIdx = clickedIdx;
             RunAuditAsync();
+            RunCheckShieldAsync();
             InvalidateRect(m_hwnd, NULL, FALSE);
             return;
         }
     }
 
-    // 2. Sidebar Navigation (6 items)
-    float navY = 196.0f;
-    float navH = 38.0f;
-    for (int i = 0; i < 6; ++i) {
-        RectF navItem(16.0f, navY + i * (navH + 6.0f), 208.0f, navH);
+    // 2. Sidebar Navigation (7 items)
+    float navY = 188.0f;
+    float navH = 36.0f;
+    for (int i = 0; i < 7; ++i) {
+        RectF navItem(16.0f, navY + i * (navH + 5.0f), 208.0f, navH);
         if (x >= navItem.X && x <= navItem.X + navItem.Width && y >= navItem.Y && y <= navItem.Y + navItem.Height) {
             m_currentPage = (NavPage)i;
             InvalidateRect(m_hwnd, NULL, FALSE);
@@ -817,20 +923,19 @@ void AppWindow::OnLButtonDown(int x, int y) {
     float startY = 24.0f;
 
     if (m_currentPage == NavPage::Dashboard) {
-        float actY = startY + 250.0f;
-        if (x >= startX && x <= startX + 240.0f && y >= actY && y <= actY + 42.0f) {
+        float actY = startY + 248.0f;
+        if (x >= startX && x <= startX + 230.0f && y >= actY && y <= actY + 42.0f) {
             TweakEngine::ApplyPreset(m_tweaks, TweakPreset::Maximum);
             RunApplyTweaksAsync();
-        } else if (x >= startX + 252.0f && x <= startX + 492.0f && y >= actY && y <= actY + 42.0f) {
+        } else if (x >= startX + 242.0f && x <= startX + 472.0f && y >= actY && y <= actY + 42.0f) {
+            RunToggleAllShieldAsync(true);
+        } else if (x >= startX + 484.0f && x <= startX + 684.0f && y >= actY && y <= actY + 42.0f) {
             TweakEngine::ApplyPreset(m_tweaks, TweakPreset::UltraLowResource);
             RunApplyTweaksAsync();
-        } else if (x >= startX + 504.0f && x <= startX + 684.0f && y >= actY && y <= actY + 42.0f) {
-            m_currentPage = NavPage::Updates;
-            RunCheckUpdatesAsync();
-            InvalidateRect(m_hwnd, NULL, FALSE);
+        } else if (x >= startX + 696.0f && x <= startX + 826.0f && y >= actY && y <= actY + 42.0f) {
+            RunDeepCleanAsync();
         }
     } else if (m_currentPage == NavPage::Tweaks) {
-        // Presets row
         float presY = startY + 52.0f;
         if (y >= presY && y <= presY + 32.0f) {
             if (x >= startX && x <= startX + 140.0f) {
@@ -855,7 +960,7 @@ void AppWindow::OnLButtonDown(int x, int y) {
         // Toggles
         float cardY = presY + 42.0f - (float)m_tweakScrollY;
         for (size_t i = 0; i < m_tweaks.size(); ++i) {
-            RectF togRc(startX + (1080.0f - 240.0f - 56.0f) - 52.0f, cardY + 20.0f, 40.0f, 22.0f);
+            RectF togRc(startX + (1120.0f - 240.0f - 56.0f) - 52.0f, cardY + 20.0f, 40.0f, 22.0f);
             if (x >= togRc.X - 10.0f && x <= togRc.X + togRc.Width + 10.0f && y >= togRc.Y && y <= togRc.Y + togRc.Height) {
                 m_tweaks[i].enabled = !m_tweaks[i].enabled;
                 InvalidateRect(m_hwnd, NULL, FALSE);
@@ -871,6 +976,38 @@ void AppWindow::OnLButtonDown(int x, int y) {
         if (x >= applyBtn.X && x <= applyBtn.X + applyBtn.Width && y >= applyBtn.Y && y <= applyBtn.Y + applyBtn.Height) {
             RunApplyTweaksAsync();
         }
+    } else if (m_currentPage == NavPage::Shield) {
+        float by = startY + 56.0f;
+        // Master Buttons
+        if (x >= startX && x <= startX + 320.0f && y >= by && y <= by + 42.0f) {
+            RunToggleAllShieldAsync(true);
+            return;
+        } else if (x >= startX + 332.0f && x <= startX + 552.0f && y >= by && y <= by + 42.0f) {
+            RunToggleAllShieldAsync(false);
+            return;
+        }
+
+        // Card 1 Hosts Buttons
+        float cardY = by + 56.0f;
+        float cardH = 150.0f;
+        RectF c1(startX, cardY, (float)(1120 - 240) - 56.0f, cardH);
+        if (x >= c1.X + 16.0f && x <= c1.X + 176.0f && y >= c1.Y + 104.0f && y <= c1.Y + 136.0f) {
+            RunToggleHostsBlockAsync(true);
+            return;
+        } else if (x >= c1.X + 186.0f && x <= c1.X + 346.0f && y >= c1.Y + 104.0f && y <= c1.Y + 136.0f) {
+            RunToggleHostsBlockAsync(false);
+            return;
+        }
+
+        // Card 2 Firewall Buttons
+        RectF c2(startX, cardY + cardH + 16.0f, (float)(1120 - 240) - 56.0f, cardH);
+        if (x >= c2.X + 16.0f && x <= c2.X + 176.0f && y >= c2.Y + 104.0f && y <= c2.Y + 136.0f) {
+            RunToggleFirewallBlockAsync(true);
+            return;
+        } else if (x >= c2.X + 186.0f && x <= c2.X + 346.0f && y >= c2.Y + 104.0f && y <= c2.Y + 136.0f) {
+            RunToggleFirewallBlockAsync(false);
+            return;
+        }
     } else if (m_currentPage == NavPage::Cleaner) {
         float cy = startY + 68.0f;
         float runY = cy + 330.0f;
@@ -879,16 +1016,14 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
     } else if (m_currentPage == NavPage::Updates) {
         float by = startY + 56.0f;
-        // Check updates button
         if (x >= startX && x <= startX + 280.0f && y >= by && y <= by + 38.0f) {
             RunCheckUpdatesAsync();
             return;
         }
 
-        // Card action buttons (Freeze vs Allow)
         float cardY = by + 52.0f;
         float cardH = 110.0f;
-        float contentW = (float)(1080 - 240) - 56.0f;
+        float contentW = (float)(1120 - 240) - 56.0f;
 
         for (int i = 0; i < 3; ++i) {
             RectF uCard(startX, cardY + i * (cardH + 12.0f), contentW, cardH);
@@ -912,7 +1047,7 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
     } else if (m_currentPage == NavPage::Logs) {
         if (!m_isBusy) {
-            float contentW = (float)(1080 - 240) - 56.0f;
+            float contentW = (float)(1120 - 240) - 56.0f;
             float clearBtnX = startX + contentW - 100.0f;
             if (x >= clearBtnX && x <= clearBtnX + 96.0f && y >= startY + 20.0f && y <= startY + 46.0f) {
                 m_logs.clear();
@@ -958,6 +1093,103 @@ void AppWindow::RunCheckUpdatesAsync() {
         auto infos = UpdateChecker::CheckAll(win->m_browsers);
         auto* pInfos = new std::vector<BrowserUpdateInfo>(infos);
         PostMessageW(h, WM_APP_UPDATES_DONE, 0, (LPARAM)pInfos);
+        return 0;
+    }, hwnd, 0, NULL);
+}
+
+void AppWindow::RunCheckShieldAsync() {
+    HWND hwnd = m_hwnd;
+    BrowserTarget target = m_browsers[m_selectedBrowserIdx];
+
+    CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
+        HWND h = (HWND)p;
+        AppWindow* win = (AppWindow*)GetWindowLongPtrW(h, GWLP_USERDATA);
+        if (!win) return 0;
+
+        BrowserTarget t = win->m_browsers[win->m_selectedBrowserIdx];
+        NetworkShieldStatus st = NetworkShield::GetStatus(t);
+        NetworkShieldStatus* pSt = new NetworkShieldStatus(st);
+        PostMessageW(h, WM_APP_SHIELD_DONE, 0, (LPARAM)pSt);
+        return 0;
+    }, hwnd, 0, NULL);
+}
+
+void AppWindow::RunToggleHostsBlockAsync(bool enable) {
+    m_currentPage = NavPage::Logs;
+    HWND hwnd = m_hwnd;
+
+    CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
+        HWND h = (HWND)p;
+        AppWindow* win = (AppWindow*)GetWindowLongPtrW(h, GWLP_USERDATA);
+        if (!win) return 0;
+
+        auto logCb = [h](const std::wstring& msg, const std::wstring& lvl) {
+            std::wstring* pMsg = new std::wstring(msg);
+            std::wstring* pLvl = new std::wstring(lvl);
+            PostMessageW(h, WM_APP_ENGINE_LOG, (WPARAM)pLvl, (LPARAM)pMsg);
+        };
+
+        if (win->m_shieldStatus.hostsBlockActive) {
+            NetworkShield::DisableHostsBlock(logCb);
+        } else {
+            NetworkShield::EnableHostsBlock(logCb);
+        }
+
+        PostMessageW(h, WM_APP_ENGINE_DONE, 0, 0);
+        return 0;
+    }, hwnd, 0, NULL);
+}
+
+void AppWindow::RunToggleFirewallBlockAsync(bool enable) {
+    m_currentPage = NavPage::Logs;
+    HWND hwnd = m_hwnd;
+
+    CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
+        HWND h = (HWND)p;
+        AppWindow* win = (AppWindow*)GetWindowLongPtrW(h, GWLP_USERDATA);
+        if (!win) return 0;
+        BrowserTarget t = win->m_browsers[win->m_selectedBrowserIdx];
+
+        auto logCb = [h](const std::wstring& msg, const std::wstring& lvl) {
+            std::wstring* pMsg = new std::wstring(msg);
+            std::wstring* pLvl = new std::wstring(lvl);
+            PostMessageW(h, WM_APP_ENGINE_LOG, (WPARAM)pLvl, (LPARAM)pMsg);
+        };
+
+        if (win->m_shieldStatus.firewallBlockActive) {
+            NetworkShield::DisableFirewallBlock(logCb);
+        } else {
+            NetworkShield::EnableFirewallBlock(t, logCb);
+        }
+
+        PostMessageW(h, WM_APP_ENGINE_DONE, 0, 0);
+        return 0;
+    }, hwnd, 0, NULL);
+}
+
+void AppWindow::RunToggleAllShieldAsync(bool enable) {
+    m_currentPage = NavPage::Logs;
+    HWND hwnd = m_hwnd;
+
+    CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
+        HWND h = (HWND)p;
+        AppWindow* win = (AppWindow*)GetWindowLongPtrW(h, GWLP_USERDATA);
+        if (!win) return 0;
+        BrowserTarget t = win->m_browsers[win->m_selectedBrowserIdx];
+
+        auto logCb = [h](const std::wstring& msg, const std::wstring& lvl) {
+            std::wstring* pMsg = new std::wstring(msg);
+            std::wstring* pLvl = new std::wstring(lvl);
+            PostMessageW(h, WM_APP_ENGINE_LOG, (WPARAM)pLvl, (LPARAM)pMsg);
+        };
+
+        if (win->m_shieldStatus.hostsBlockActive && win->m_shieldStatus.firewallBlockActive) {
+            NetworkShield::DisableAll(logCb);
+        } else {
+            NetworkShield::EnableAll(t, logCb);
+        }
+
+        PostMessageW(h, WM_APP_ENGINE_DONE, 0, 0);
         return 0;
     }, hwnd, 0, NULL);
 }
@@ -1099,5 +1331,6 @@ void AppWindow::RunResetPoliciesAsync() {
         AddLog(L"All policies deleted. Target browser reset to factory defaults.", L"SUCCESS");
         RunAuditAsync();
         RunCheckUpdatesAsync();
+        RunCheckShieldAsync();
     }
 }

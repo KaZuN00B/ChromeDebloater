@@ -9,6 +9,7 @@
 #include "engine/tweak_engine.h"
 #include "engine/backup_engine.h"
 #include "engine/update_checker.h"
+#include "engine/network_shield.h"
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -80,6 +81,12 @@ int RunCliMode(int argc, wchar_t** argv) {
     bool checkUpdates = false;
     bool lockUpdates = false;
     bool unlockUpdates = false;
+    bool enableShield = false;
+    bool disableShield = false;
+    bool enableHosts = false;
+    bool disableHosts = false;
+    bool enableFw = false;
+    bool disableFw = false;
 
     for (int i = 1; i < argc; ++i) {
         std::wstring arg = argv[i];
@@ -97,12 +104,30 @@ int RunCliMode(int argc, wchar_t** argv) {
             lockUpdates = true;
         } else if (arg == L"--unlock-updates") {
             unlockUpdates = true;
+        } else if (arg == L"--shield" || arg == L"-s") {
+            enableShield = true;
+        } else if (arg == L"--unshield") {
+            disableShield = true;
+        } else if (arg == L"--hosts") {
+            enableHosts = true;
+        } else if (arg == L"--unhosts") {
+            disableHosts = true;
+        } else if (arg == L"--firewall") {
+            enableFw = true;
+        } else if (arg == L"--unfirewall") {
+            disableFw = true;
         } else if ((arg == L"--browser" || arg == L"-b") && (i + 1 < argc)) {
             targetKey = argv[++i];
         } else if (arg == L"--help" || arg == L"-h" || arg == L"/?") {
             PrintConsole(L"Usage: ChromeDebloater.exe [options]\n\n");
             PrintConsole(L"Options:\n");
-            PrintConsole(L"  --all, -a                 Apply all 13 hardening and optimization tweaks\n");
+            PrintConsole(L"  --all, -a                 Apply all 14 hardening and debloat modules\n");
+            PrintConsole(L"  --shield, -s              Activate Network Shield (Windows Firewall + Hosts file block)\n");
+            PrintConsole(L"  --unshield                Deactivate Network Shield (removes rules and restores hosts)\n");
+            PrintConsole(L"  --hosts                   Block Google telemetry & tracking domains via hosts file\n");
+            PrintConsole(L"  --unhosts                 Remove Google telemetry entries from hosts file\n");
+            PrintConsole(L"  --firewall                Add Windows Defender Firewall outbound rules for updaters\n");
+            PrintConsole(L"  --unfirewall              Delete ChromeDebloater Windows Firewall rules\n");
             PrintConsole(L"  --low-resource, -l        Apply Ultra Low-Resource profile (RAM clamp & renderer limit)\n");
             PrintConsole(L"  --audit                   Run system audit and display hardening score\n");
             PrintConsole(L"  --clean, -c               Perform deep profile SQLite vacuum and cache sweep\n");
@@ -111,7 +136,7 @@ int RunCliMode(int argc, wchar_t** argv) {
             PrintConsole(L"  --unlock-updates          Restore target browser update policies to defaults\n");
             PrintConsole(L"  --browser, -b <name>      Target browser: chrome (default), brave, or edge\n");
             PrintConsole(L"  --help, -h                Display this help screen\n\n");
-            PrintConsole(L"Launch without parameters to open the modern graphical dark interface.\n\n");
+            PrintConsole(L"Launch without parameters to open the modern graphical interface.\n\n");
             return 0;
         }
     }
@@ -148,15 +173,52 @@ int RunCliMode(int argc, wchar_t** argv) {
 
     PrintConsole(L"[*] Target Browser: " + pTarget->name + (pTarget->version.empty() ? L"" : (L" (v" + pTarget->version + L")")) + L"\n");
 
+    auto logPrinter = [](const std::wstring& msg, const std::wstring& lvl) {
+        PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
+    };
+
+    if (enableShield) {
+        PrintConsole(L"[*] Activating full Windows Network Shield (Firewall + Hosts)...\n");
+        NetworkShield::EnableAll(*pTarget, logPrinter);
+        PrintConsole(L"[✓] Network Shield engaged successfully.\n\n");
+        return 0;
+    }
+
+    if (disableShield) {
+        PrintConsole(L"[*] Deactivating Windows Network Shield...\n");
+        NetworkShield::DisableAll(logPrinter);
+        PrintConsole(L"[✓] Network Shield deactivated.\n\n");
+        return 0;
+    }
+
+    if (enableHosts) {
+        PrintConsole(L"[*] Blocking Google telemetry domains in Windows hosts file...\n");
+        NetworkShield::EnableHostsBlock(logPrinter);
+        return 0;
+    }
+
+    if (disableHosts) {
+        PrintConsole(L"[*] Restoring Windows hosts file...\n");
+        NetworkShield::DisableHostsBlock(logPrinter);
+        return 0;
+    }
+
+    if (enableFw) {
+        PrintConsole(L"[*] Configuring Windows Defender Firewall rules...\n");
+        NetworkShield::EnableFirewallBlock(*pTarget, logPrinter);
+        return 0;
+    }
+
+    if (disableFw) {
+        PrintConsole(L"[*] Deleting ChromeDebloater Windows Firewall rules...\n");
+        NetworkShield::DisableFirewallBlock(logPrinter);
+        return 0;
+    }
+
     if (lockUpdates) {
         PrintConsole(L"[*] Enforcing 4-layer update lockdown for " + pTarget->name + L"...\n");
         std::vector<int> ids = { 13 };
-        TweakEngine::ExecuteTweaks(*pTarget, ids,
-            [](const std::wstring& msg, const std::wstring& lvl) {
-                PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
-            },
-            [](int, const std::wstring&) {}
-        );
+        TweakEngine::ExecuteTweaks(*pTarget, ids, logPrinter, [](int, const std::wstring&) {});
         PrintConsole(L"[✓] " + pTarget->name + L" frozen at current installed version.\n\n");
         return 0;
     }
@@ -186,9 +248,7 @@ int RunCliMode(int argc, wchar_t** argv) {
     if (runClean) {
         PrintConsole(L"[*] Executing deep profile cleaner...\n");
         INT64 reclaimed = 0;
-        TweakEngine::RunDeepClean(*pTarget, reclaimed, [](const std::wstring& msg, const std::wstring& lvl) {
-            PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
-        });
+        TweakEngine::RunDeepClean(*pTarget, reclaimed, logPrinter);
         PrintConsole(L"\n[✓] Deep clean complete. Reclaimed " + std::to_wstring(reclaimed / 1024) + L" KB whitespace.\n\n");
         return 0;
     }
@@ -202,13 +262,7 @@ int RunCliMode(int argc, wchar_t** argv) {
             if (tw.enabled) ids.push_back(tw.id);
         }
 
-        bool ok = TweakEngine::ExecuteTweaks(
-            *pTarget, ids,
-            [](const std::wstring& msg, const std::wstring& lvl) {
-                PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
-            },
-            [](int, const std::wstring&) {}
-        );
+        bool ok = TweakEngine::ExecuteTweaks(*pTarget, ids, logPrinter, [](int, const std::wstring&) {});
         PrintConsole(L"\n[✓] Ultra Low-Resource optimization complete with status: " + std::wstring(ok ? L"SUCCESS" : L"WARNINGS") + L"\n\n");
         return ok ? 0 : 1;
     }
@@ -219,18 +273,12 @@ int RunCliMode(int argc, wchar_t** argv) {
         BackupEngine::CreateSnapshot(*pTarget, bPath);
         PrintConsole(L"[✓] Snapshot saved to: " + bPath + L"\n");
 
-        PrintConsole(L"[*] Enforcing all 13 hardening and debloat modules...\n");
+        PrintConsole(L"[*] Enforcing all 14 hardening, debloat, and shield modules...\n");
         auto allTweaks = TweakEngine::GetAllTweaks();
         std::vector<int> ids;
         for (const auto& tw : allTweaks) ids.push_back(tw.id);
 
-        bool ok = TweakEngine::ExecuteTweaks(
-            *pTarget, ids,
-            [](const std::wstring& msg, const std::wstring& lvl) {
-                PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
-            },
-            [](int, const std::wstring&) {}
-        );
+        bool ok = TweakEngine::ExecuteTweaks(*pTarget, ids, logPrinter, [](int, const std::wstring&) {});
 
         PrintConsole(L"\n[✓] Optimization sweep completed with status: " + std::wstring(ok ? L"SUCCESS" : L"WARNINGS") + L"\n\n");
         return ok ? 0 : 1;
@@ -248,10 +296,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             if (arg == L"--all" || arg == L"-a" || arg == L"--low-resource" || arg == L"-l" || arg == L"--low" ||
                 arg == L"--audit" || arg == L"--clean" || arg == L"-c" || arg == L"--check-updates" || arg == L"-u" ||
                 arg == L"--updates" || arg == L"--lock-updates" || arg == L"--unlock-updates" ||
+                arg == L"--shield" || arg == L"-s" || arg == L"--unshield" || arg == L"--hosts" || arg == L"--unhosts" ||
+                arg == L"--firewall" || arg == L"--unfirewall" ||
                 arg == L"--help" || arg == L"-h" || arg == L"/?") {
                 
                 if ((arg == L"--all" || arg == L"-a" || arg == L"--low-resource" || arg == L"-l" ||
-                     arg == L"--clean" || arg == L"-c" || arg == L"--lock-updates" || arg == L"--unlock-updates") && !IsProcessElevated()) {
+                     arg == L"--clean" || arg == L"-c" || arg == L"--lock-updates" || arg == L"--unlock-updates" ||
+                     arg == L"--shield" || arg == L"-s" || arg == L"--unshield" || arg == L"--hosts" || arg == L"--unhosts" ||
+                     arg == L"--firewall" || arg == L"--unfirewall") && !IsProcessElevated()) {
                     if (RelaunchAsAdmin(pCmdLine)) {
                         LocalFree(argv);
                         return 0;
@@ -271,7 +323,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         } else {
             MessageBoxW(
                 NULL,
-                L"ChromeDebloater Pro requires Administrator privileges to configure Windows enterprise policies.\nPlease run as administrator.",
+                L"ChromeDebloater Pro requires Administrator privileges to configure Windows enterprise policies and firewall rules.\nPlease run as administrator.",
                 L"Elevation Required",
                 MB_ICONERROR | MB_OK
             );

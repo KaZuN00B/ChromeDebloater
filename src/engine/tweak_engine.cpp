@@ -83,6 +83,11 @@ std::vector<TweakItem> TweakEngine::GetAllTweaks() {
             14, L"Network Shield", L"Windows Firewall & Hosts Telemetry Block",
             L"Enforces Windows Defender Firewall outbound rules and sinkholes 48+ Google, Edge, and Brave telemetry domains via hosts file.",
             L"SHIELD", true, false
+        },
+        {
+            15, L"Interface", L"Zen UI, Tab Hover Cards & Quiet Notifications",
+            L"Kills tab hover card thumbnails, Google Lens, side search, download bubble animations, and quiets notification prompts.",
+            L"RECOMMENDED", true, false
         }
     };
 }
@@ -96,13 +101,13 @@ void TweakEngine::ApplyPreset(std::vector<TweakItem>& tweaks, TweakPreset preset
             case TweakPreset::Balanced:
                 tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 4 || tw.id == 5 ||
                               tw.id == 6 || tw.id == 7 || tw.id == 8 || tw.id == 9 || tw.id == 10 ||
-                              tw.id == 12 || tw.id == 14);
+                              tw.id == 12 || tw.id == 14 || tw.id == 15);
                 break;
             case TweakPreset::PrivacyOnly:
-                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 8 || tw.id == 11 || tw.id == 14);
+                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 8 || tw.id == 11 || tw.id == 14 || tw.id == 15);
                 break;
             case TweakPreset::UltraLowResource:
-                tw.enabled = (tw.id == 5 || tw.id == 6 || tw.id == 7 || tw.id == 10 || tw.id == 12 || tw.id == 14);
+                tw.enabled = (tw.id == 5 || tw.id == 6 || tw.id == 7 || tw.id == 10 || tw.id == 12 || tw.id == 14 || tw.id == 15);
                 break;
         }
     }
@@ -767,6 +772,65 @@ bool TweakEngine::ExecuteTweaks(
                 NetworkShield::EnableAll(browser, logCb);
                 break;
             }
+
+            case 15: { // Zen UI, Tab Hover Cards & Quiet Notifications
+                progCb(pct, L"Enforcing Zen UI, tab hover cards & quiet notification declutter...");
+
+                WriteDualRegDword(p, L"TabHoverCardImages", 0);
+                WriteDualRegDword(p, L"LensOverlaySettings", 1);
+                WriteDualRegDword(p, L"SideSearchEnabled", 0);
+                WriteDualRegDword(p, L"SidePanelPinning", 0);
+                WriteDualRegDword(p, L"QuietNotificationPromptsEnabled", 1);
+                WriteDualRegDword(p, L"DefaultGeolocationSetting", 2);
+                WriteDualRegDword(p, L"DownloadBubbleEnabled", 0);
+                WriteDualRegDword(p, L"BrowserAddPersonEnabled", 0);
+                WriteDualRegDword(p, L"BrowserGuestModeEnabled", 0);
+                WriteDualRegDword(p, L"PromotionsEnabled", 0);
+                WriteDualRegDword(p, L"SuppressUnsupportedOSWarning", 1);
+
+                // Inject Local State flags: disable tab search & disable tab hover cards
+                std::wstring lsPath = browser.userDataDir + L"\\Local State";
+                if (PathExists(lsPath)) {
+                    std::ifstream in(lsPath, std::ios::binary);
+                    if (in.is_open()) {
+                        std::stringstream ss;
+                        ss << in.rdbuf();
+                        in.close();
+                        std::string c = ss.str();
+                        bool modified = false;
+
+                        std::vector<std::string> zenFlags = {
+                            "enable-tab-search@0",
+                            "tab-hover-card-images@0"
+                        };
+
+                        size_t pos = c.find("\"enabled_labs_experiments\"");
+                        if (pos != std::string::npos) {
+                            size_t openBracket = c.find('[', pos);
+                            if (openBracket != std::string::npos) {
+                                for (const auto& zf : zenFlags) {
+                                    if (c.find("\"" + zf + "\"") == std::string::npos) {
+                                        c.insert(openBracket + 1, "\"" + zf + "\",");
+                                        modified = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (modified) {
+                            std::ofstream out(lsPath, std::ios::binary | std::ios::trunc);
+                            if (out.is_open()) {
+                                out << c;
+                                out.close();
+                                logCb(L"  [✓] Tab search arrow and hover image flags disabled in Local State.", L"INFO");
+                            }
+                        }
+                    }
+                }
+
+                logCb(L"[✓] Zen UI enforced: tab hover previews killed, Google Lens stripped & notification nags silenced.", L"SUCCESS");
+                break;
+            }
         }
     }
 
@@ -809,23 +873,33 @@ bool TweakEngine::RunDeepClean(
     }
 
     INT64 cacheBefore = 0;
-    cacheBefore += AuditEngine::CalculateDirectorySize(browser.userDataDir + L"\\Default\\GPUCache");
-    cacheBefore += AuditEngine::CalculateDirectorySize(browser.userDataDir + L"\\Default\\DawnCache");
-    cacheBefore += AuditEngine::CalculateDirectorySize(browser.userDataDir + L"\\GrShaderCache");
-    cacheBefore += AuditEngine::CalculateDirectorySize(browser.userDataDir + L"\\ShaderCache");
-    cacheBefore += AuditEngine::CalculateDirectorySize(browser.userDataDir + L"\\Crashpad");
+    std::vector<std::wstring> cleanDirs = {
+        browser.userDataDir + L"\\Default\\GPUCache",
+        browser.userDataDir + L"\\Default\\DawnCache",
+        browser.userDataDir + L"\\GrShaderCache",
+        browser.userDataDir + L"\\ShaderCache",
+        browser.userDataDir + L"\\Crashpad",
+        browser.userDataDir + L"\\OptimizationGuidePredictionModels",
+        browser.userDataDir + L"\\OnDeviceModel",
+        browser.userDataDir + L"\\BrowserMetrics",
+        browser.userDataDir + L"\\Default\\Service Worker\\CacheStorage",
+        browser.userDataDir + L"\\Default\\Service Worker\\ScriptCache",
+        browser.userDataDir + L"\\Default\\Media Cache"
+    };
 
-    RemoveDirRecursive(browser.userDataDir + L"\\Default\\GPUCache");
-    RemoveDirRecursive(browser.userDataDir + L"\\Default\\DawnCache");
-    RemoveDirRecursive(browser.userDataDir + L"\\GrShaderCache");
-    RemoveDirRecursive(browser.userDataDir + L"\\ShaderCache");
-    RemoveDirRecursive(browser.userDataDir + L"\\Crashpad");
+    for (const auto& d : cleanDirs) {
+        INT64 dSize = AuditEngine::CalculateDirectorySize(d);
+        if (dSize > 0) {
+            cacheBefore += dSize;
+            RemoveDirRecursive(d);
+        }
+    }
 
     outReclaimedBytes += cacheBefore;
     if (cacheBefore > 0) {
-        logCb(L"[✓] Stale GPU, Dawn & crashpad caches swept (" + std::to_wstring(cacheBefore / 1024) + L" KB reclaimed).", L"SUCCESS");
+        logCb(L"[✓] Stale GPU caches, AI models & worker storage swept (" + std::to_wstring(cacheBefore / 1024) + L" KB reclaimed).", L"SUCCESS");
     } else {
-        logCb(L"[✓] GPU & shader caches already clean.", L"INFO");
+        logCb(L"[✓] GPU, shader & AI model caches already clean.", L"INFO");
     }
 
     NetworkShield::FlushDns();

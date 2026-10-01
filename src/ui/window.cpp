@@ -578,7 +578,7 @@ void AppWindow::RenderTweaks(Graphics& g, const RectF& rect) {
     float contentW = rect.Width - 56.0f;
 
     SolidBrush titleBrush(Theme::TextPrimary);
-    g.DrawString(L"Hardening & Optimization Modules (14 Subsystems)", -1, m_fTitle, PointF(startX, startY), &titleBrush);
+    g.DrawString(L"Hardening & Optimization Modules (15 Subsystems)", -1, m_fTitle, PointF(startX, startY), &titleBrush);
 
     SolidBrush subBrush(Theme::TextSecondary);
     g.DrawString(L"Granular enterprise policies, memory clamps, network shield & performance flags", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);

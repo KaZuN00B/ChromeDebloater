@@ -8,7 +8,7 @@
 #include "network_shield.h"
 
 enum class TweakPreset {
-    Maximum,         // All 14 optimizations & security modules
+    Maximum,         // All 15 optimizations & security modules
     Balanced,        // Everyday fast, privacy & low resource
     PrivacyOnly,     // Anti-telemetry, Network Shield & DoH focus
     UltraLowResource // Max RAM savings, renderer limits, cache clamps & tab sleep

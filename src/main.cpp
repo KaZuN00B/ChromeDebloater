@@ -128,7 +128,7 @@ int RunCliMode(int argc, wchar_t** argv) {
         } else if (arg == L"--help" || arg == L"-h" || arg == L"/?") {
             PrintConsole(L"Usage: ChromeDebloater.exe [options]\n\n");
             PrintConsole(L"Options:\n");
-            PrintConsole(L"  --all, -a                 Apply all 14 hardening and debloat modules\n");
+            PrintConsole(L"  --all, -a                 Apply all 15 hardening and debloat modules\n");
             PrintConsole(L"  --shield, -s              Activate Network Shield (Windows Firewall + Hosts file block)\n");
             PrintConsole(L"  --unshield                Deactivate Network Shield (removes rules and restores hosts)\n");
             PrintConsole(L"  --hosts                   Block Google telemetry & tracking domains via hosts file\n");
@@ -281,7 +281,7 @@ int RunCliMode(int argc, wchar_t** argv) {
         BackupEngine::CreateSnapshot(*pTarget, bPath);
         PrintConsole(L"[✓] Snapshot saved to: " + bPath + L"\n");
 
-        PrintConsole(L"[*] Enforcing all 14 hardening, debloat, and shield modules...\n");
+        PrintConsole(L"[*] Enforcing all 15 hardening, debloat, and shield modules...\n");
         auto allTweaks = TweakEngine::GetAllTweaks();
         std::vector<int> ids;
         for (const auto& tw : allTweaks) ids.push_back(tw.id);

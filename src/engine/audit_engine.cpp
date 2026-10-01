@@ -297,11 +297,22 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     // 9. Shader & GPU Caches Whitespace
     // ─────────────────────────────────────────────────────────────────────────
     INT64 cacheBytes = 0;
-    cacheBytes += CalculateDirectorySize(browser.userDataDir + L"\\Default\\GPUCache");
-    cacheBytes += CalculateDirectorySize(browser.userDataDir + L"\\Default\\DawnCache");
-    cacheBytes += CalculateDirectorySize(browser.userDataDir + L"\\GrShaderCache");
-    cacheBytes += CalculateDirectorySize(browser.userDataDir + L"\\ShaderCache");
-    cacheBytes += CalculateDirectorySize(browser.userDataDir + L"\\Crashpad");
+    std::vector<std::wstring> auditDirs = {
+        browser.userDataDir + L"\\Default\\GPUCache",
+        browser.userDataDir + L"\\Default\\DawnCache",
+        browser.userDataDir + L"\\GrShaderCache",
+        browser.userDataDir + L"\\ShaderCache",
+        browser.userDataDir + L"\\Crashpad",
+        browser.userDataDir + L"\\OptimizationGuidePredictionModels",
+        browser.userDataDir + L"\\OnDeviceModel",
+        browser.userDataDir + L"\\BrowserMetrics",
+        browser.userDataDir + L"\\Default\\Service Worker\\CacheStorage",
+        browser.userDataDir + L"\\Default\\Service Worker\\ScriptCache",
+        browser.userDataDir + L"\\Default\\Media Cache"
+    };
+    for (const auto& d : auditDirs) {
+        cacheBytes += CalculateDirectorySize(d);
+    }
     report.reclaimableBytes += cacheBytes;
 
     AuditItem itemCache;
@@ -364,6 +375,30 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
         report.bloatedCount++;
     }
     report.items.push_back(itemShield);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 12. Zen UI & Quiet Notification Declutter
+    // ─────────────────────────────────────────────────────────────────────────
+    bool zenActive = CheckDualDword(p, L"TabHoverCardImages", 0) &&
+                     CheckDualDword(p, L"LensOverlaySettings", 1) &&
+                     CheckDualDword(p, L"QuietNotificationPromptsEnabled", 1);
+
+    AuditItem itemZen;
+    itemZen.id = 12;
+    itemZen.category = L"Interface";
+    itemZen.name = L"Zen UI & Quiet Notifications";
+    if (zenActive) {
+        itemZen.status = AuditStatus::Optimized;
+        itemZen.description = L"Tab hover preview popups killed, Google Lens stripped & notification nags quieted.";
+        itemZen.recommendation = L"Clean interface.";
+        report.optimizedCount++;
+    } else {
+        itemZen.status = AuditStatus::Bloated;
+        itemZen.description = L"Intrusive hover thumbnails, Google Lens prompts & notification popups enabled.";
+        itemZen.recommendation = L"Apply Zen UI declutter module.";
+        report.bloatedCount++;
+    }
+    report.items.push_back(itemZen);
 
     // Score calculation
     int totalAssessable = report.optimizedCount + report.bloatedCount;

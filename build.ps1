@@ -1,4 +1,4 @@
-# ChromeDebloater C++ Native Build Script
+# ChromeDebloater Pro Native C++ Build Script
 param(
     [switch]$Clean
 )
@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
 Write-Host "`n==================================================" -ForegroundColor Cyan
-Write-Host "   ChromeDebloater Native C++ Build Script        " -ForegroundColor Cyan
+Write-Host "   ChromeDebloater Pro Native C++ Build Script    " -ForegroundColor Cyan
 Write-Host "==================================================`n" -ForegroundColor Cyan
 
 # Locate vcvars64.bat
@@ -52,9 +52,9 @@ if ($LASTEXITCODE -ne 0) {
 
 # Compile and link C++
 Write-Host "[*] Compiling native C++ executable (O2 Optimized)..." -ForegroundColor Green
-$sources = "`"$srcDir\main.cpp`" `"$srcDir\ui.cpp`" `"$srcDir\engine.cpp`""
-$libs = "advapi32.lib shell32.lib user32.lib gdi32.lib comctl32.lib uxtheme.lib dwmapi.lib version.lib dnsapi.lib ole32.lib"
-$clCmd = "call `"$vcvars`" >nul && cl /nologo /O2 /std:c++20 /EHsc /utf-8 /DUNICODE /D_UNICODE /MD /Fo`"$buildDir\\`" $sources `"$appRes`" /link /SUBSYSTEM:WINDOWS /MANIFESTUAC:`"level='requireAdministrator' uiAccess='false'`" /OUT:`"$outExe`" $libs"
+$sources = "`"$srcDir\main.cpp`" `"$srcDir\ui\window.cpp`" `"$srcDir\ui\render_utils.cpp`" `"$srcDir\engine\audit_engine.cpp`" `"$srcDir\engine\tweak_engine.cpp`" `"$srcDir\engine\backup_engine.cpp`""
+$libs = "advapi32.lib shell32.lib user32.lib gdi32.lib gdiplus.lib comctl32.lib uxtheme.lib dwmapi.lib version.lib dnsapi.lib ole32.lib"
+$clCmd = "call `"$vcvars`" >nul && cl /nologo /O2 /std:c++20 /EHsc /utf-8 /DUNICODE /D_UNICODE /MD /I`"$srcDir`" /Fo`"$buildDir\\`" $sources `"$appRes`" /link /SUBSYSTEM:WINDOWS /MANIFESTUAC:`"level='requireAdministrator' uiAccess='false'`" /OUT:`"$outExe`" $libs"
 
 cmd.exe /c $clCmd
 if ($LASTEXITCODE -ne 0) {

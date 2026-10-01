@@ -1,0 +1,4 @@
+#include <windows.h>
+
+// Embed the application manifest with UAC requireAdministrator
+1 RT_MANIFEST "app.manifest"

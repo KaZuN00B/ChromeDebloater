@@ -180,8 +180,8 @@ void AppWindow::OnInit(HWND hwnd) {
     m_tweaks = TweakEngine::GetAllTweaks();
     m_snapshots = BackupEngine::ListSnapshots();
 
-    AddLog(L"ChromeDebloater Pro Native v3.0 started.", L"INFO");
-    AddLog(L"Direct Win32 Kernel & Registry Hardening Engine Ready.", L"INFO");
+    AddLog(L"ChromeDebloater Pro Native v3.1 started.", L"INFO");
+    AddLog(L"Verified Registry Write & Policy Engine Ready.", L"INFO");
 
     // Perform Initial System Audit
     RunAuditAsync();
@@ -279,7 +279,7 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
     g.DrawString(L"🛡 ChromeDebloater", -1, m_fTitle, PointF(20.0f, 20.0f), &titleBrush);
 
     SolidBrush verBrush(Theme::TextMuted);
-    g.DrawString(L"v3.0 Pro · Native C++ Engine", -1, m_fSmall, PointF(22.0f, 44.0f), &verBrush);
+    g.DrawString(L"v3.1 Pro · Native C++ Engine", -1, m_fSmall, PointF(22.0f, 44.0f), &verBrush);
 
     // Admin Status Badge
     RectF adminBadge(20.0f, 68.0f, 130.0f, 22.0f);
@@ -360,6 +360,25 @@ void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
     float startX = rect.X + 28.0f;
     float startY = 24.0f;
     float contentW = rect.Width - 56.0f;
+
+    // ── Progress Bar overlay at top when busy ──────────────────────────────
+    if (m_isBusy) {
+        RectF pBarBg(rect.X + 8.0f, 4.0f, rect.Width - 16.0f, 10.0f);
+        SolidBrush pbBg(Color(255, 20, 28, 42));
+        RenderUtils::FillRoundedRect(g, pbBg, pBarBg, 5.0f);
+        float filled = (pBarBg.Width - 4.0f) * ((float)m_progressPercent / 100.0f);
+        if (filled > 0) {
+            RectF pBarFill(pBarBg.X + 2.0f, pBarBg.Y + 2.0f, filled, pBarBg.Height - 4.0f);
+            SolidBrush pbFill(Theme::AccentBlue);
+            RenderUtils::FillRoundedRect(g, pbFill, pBarFill, 3.0f);
+        }
+        // Status text
+        SolidBrush actBrush(Theme::AccentBlue);
+        g.DrawString((L"⚡ " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%)").c_str(),
+            -1, m_fSmall, PointF(startX, 18.0f), &actBrush);
+        startY = 40.0f;
+    }
+    // ──────────────────────────────────────────────────────────────────────
 
     // Header
     SolidBrush titleBrush(Theme::TextPrimary);
@@ -458,6 +477,25 @@ void AppWindow::RenderTweaks(Graphics& g, const RectF& rect) {
 
     SolidBrush subBrush(Theme::TextSecondary);
     g.DrawString(L"Configure granular enterprise policies and performance flags", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+
+    // ── Progress Bar when busy ─────────────────────────────────────────────
+    if (m_isBusy) {
+        float pbY = startY + 50.0f;
+        RectF pBarBg(startX, pbY, contentW, 8.0f);
+        SolidBrush pbBg(Color(255, 20, 28, 42));
+        RenderUtils::FillRoundedRect(g, pbBg, pBarBg, 4.0f);
+        float filled = (contentW - 4.0f) * ((float)m_progressPercent / 100.0f);
+        if (filled > 0) {
+            RectF pBarFill(pBarBg.X + 2.0f, pBarBg.Y + 1.0f, filled, 6.0f);
+            SolidBrush pbFill(Theme::AccentBlue);
+            RenderUtils::FillRoundedRect(g, pbFill, pBarFill, 3.0f);
+        }
+        SolidBrush actBrush(Theme::AccentBlue);
+        std::wstring statusMsg = L"⚡ " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%) — Check Activity Console for details";
+        g.DrawString(statusMsg.c_str(), -1, m_fSmall, PointF(startX, pbY + 14.0f), &actBrush);
+        startY = pbY + 36.0f;
+    }
+    // ──────────────────────────────────────────────────────────────────────
 
     // Presets Row
     float presY = startY + 56.0f;
@@ -595,11 +633,41 @@ void AppWindow::RenderLogs(Graphics& g, const RectF& rect) {
     g.DrawString(L"Live Activity & Execution Console", -1, m_fTitle, PointF(startX, startY), &titleBrush);
 
     SolidBrush subBrush(Theme::TextSecondary);
-    g.DrawString(L"Real-time event streaming and Win32 kernel command execution", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+
+    // Show engine status or description
+    if (m_isBusy) {
+        SolidBrush actBrush(Theme::AccentBlue);
+        std::wstring busyMsg = L"⚡ Engine Active: " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%)";
+        g.DrawString(busyMsg.c_str(), -1, m_fSubtitle, PointF(startX, startY + 26.0f), &actBrush);
+
+        // Progress bar under title
+        RectF pBarBg(startX, startY + 50.0f, contentW, 6.0f);
+        SolidBrush pbBg(Color(255, 20, 28, 42));
+        RenderUtils::FillRoundedRect(g, pbBg, pBarBg, 3.0f);
+        float filled = (contentW - 4.0f) * ((float)m_progressPercent / 100.0f);
+        if (filled > 0) {
+            RectF pBarFill(pBarBg.X + 2.0f, pBarBg.Y + 1.0f, filled, 4.0f);
+            SolidBrush pbFill(Theme::AccentBlue);
+            RenderUtils::FillRoundedRect(g, pbFill, pBarFill, 2.0f);
+        }
+        startY = 68.0f;
+    } else {
+        g.DrawString(L"Real-time event streaming and Win32 kernel command execution", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+
+        // Clear button
+        RectF clearBtn(startX + contentW - 100.0f, startY + 20.0f, 96.0f, 26.0f);
+        RenderUtils::DrawCard(g, clearBtn, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
+        StringFormat sfCtr;
+        sfCtr.SetAlignment(StringAlignmentCenter);
+        sfCtr.SetLineAlignment(StringAlignmentCenter);
+        SolidBrush clrBrush(Theme::TextSecondary);
+        g.DrawString(L"Clear", -1, m_fSmall, clearBtn, &sfCtr, &clrBrush);
+        startY = 60.0f;
+    }
 
     // Terminal Card
-    float termY = startY + 60.0f;
-    float termH = rect.Height - termY - 32.0f;
+    float termY = startY;
+    float termH = rect.Height - termY - 12.0f;
     RectF termRc(startX, termY, contentW, termH);
     RenderUtils::DrawCard(g, termRc, Theme::BgInput, Theme::BorderSubtle, 8.0f);
 
@@ -615,6 +683,7 @@ void AppWindow::RenderLogs(Graphics& g, const RectF& rect) {
         Color lvlColor = Theme::SuccessGreen;
         if (m_logs[i].level == L"WARNING") lvlColor = Theme::WarningOrange;
         else if (m_logs[i].level == L"ACTION") lvlColor = Theme::AccentBlue;
+        else if (m_logs[i].level == L"INFO") lvlColor = Theme::TextSecondary;
 
         SolidBrush lvlBrush(lvlColor);
         std::wstring tag = L"[" + m_logs[i].level + L"]";
@@ -624,6 +693,13 @@ void AppWindow::RenderLogs(Graphics& g, const RectF& rect) {
         g.DrawString(m_logs[i].text.c_str(), -1, m_fConsole, PointF(termRc.X + 180.0f, logLineY), &msgBrush);
 
         logLineY += 22.0f;
+    }
+
+    // Show "Engine complete" indicator at bottom
+    if (!m_isBusy && !m_logs.empty()) {
+        SolidBrush readyBrush(Theme::TextMuted);
+        g.DrawString(L"● Engine Idle — ready for next operation", -1, m_fSmall,
+            PointF(termRc.X + 16.0f, termRc.Y + termH - 22.0f), &readyBrush);
     }
 }
 
@@ -736,6 +812,17 @@ void AppWindow::OnLButtonDown(int x, int y) {
         } else if (x >= startX + 236.0f && x <= startX + 456.0f && y >= by && y <= by + 40.0f) {
             RunResetPoliciesAsync();
         }
+    } else if (m_currentPage == NavPage::Logs) {
+        if (!m_isBusy) {
+            // Clear button: top-right of content area, y = startY + 20 to +46
+            float contentW = (float)(1080 - 240) - 56.0f;
+            float clearBtnX = startX + contentW - 100.0f;
+            if (x >= clearBtnX && x <= clearBtnX + 96.0f && y >= startY + 20.0f && y <= startY + 46.0f) {
+                m_logs.clear();
+                AddLog(L"Activity console cleared.", L"INFO");
+                InvalidateRect(m_hwnd, NULL, FALSE);
+            }
+        }
     }
 }
 
@@ -770,6 +857,12 @@ void AppWindow::RunApplyTweaksAsync() {
     m_isBusy = true;
     m_progressPercent = 0;
     m_progressAction = L"Optimizing...";
+
+    // Auto-navigate to Activity Console so user sees real-time output
+    m_currentPage = NavPage::Logs;
+    AddLog(L"══════════════════════════════════════════════", L"INFO");
+    AddLog(L"Starting optimization — switch to 'Activity Console' to monitor", L"ACTION");
+    AddLog(L"══════════════════════════════════════════════", L"INFO");
 
     std::vector<int> activeIds;
     for (const auto& tw : m_tweaks) {
@@ -814,9 +907,13 @@ void AppWindow::RunApplyTweaksAsync() {
 void AppWindow::RunDeepCleanAsync() {
     if (m_isBusy) return;
     m_isBusy = true;
+    m_progressPercent = 0;
+    m_progressAction = L"Running deep clean...";
 
-    HWND hwnd = m_hwnd;
-    BrowserTarget target = m_browsers[m_selectedBrowserIdx];
+    // Auto-navigate to logs to show progress
+    m_currentPage = NavPage::Logs;
+    AddLog(L"══════════════════════════════════════════════", L"INFO");
+    AddLog(L"Starting Deep Cleaner — SQLite vacuum, cache sweep, DNS flush", L"ACTION");
 
     CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
         HWND h = (HWND)p;
@@ -834,7 +931,7 @@ void AppWindow::RunDeepCleanAsync() {
         TweakEngine::RunDeepClean(b, reclaimed, logCb);
         PostMessageW(h, WM_APP_ENGINE_DONE, 0, 0);
         return 0;
-    }, hwnd, 0, NULL);
+    }, m_hwnd, 0, NULL);
 }
 
 void AppWindow::RunCreateBackupAsync() {

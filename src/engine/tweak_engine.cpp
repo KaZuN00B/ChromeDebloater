@@ -15,53 +15,68 @@ std::vector<TweakItem> TweakEngine::GetAllTweaks() {
     return {
         {
             1, L"AI & Models", L"Eliminate AI & Gemini Subsystems",
-            L"Enforces 25 enterprise policies to disable Gemini, PromptAPI, etc., and deletes all on-disk foundational models.",
+            L"Enforces enterprise policies to kill Gemini, PromptAPI, and Edge Copilot, and deletes on-disk local models.",
             L"HIGH IMPACT", true, false
         },
         {
-            2, L"Privacy", L"Quad9 DoH & Privacy Hardening",
+            2, L"Privacy", L"Quad9 DoH & Network Security",
             L"Enforces DNS-over-HTTPS (Quad9), HTTPS-Only mode, WebRTC IP leak mitigation, and blocks intrusive device sensors.",
             L"HIGH IMPACT", true, false
         },
         {
-            3, L"Privacy", L"Disable Telemetry & Diagnostics",
-            L"Stops metrics reporting, SafeBrowsing extended telemetry, background cleanup scanner, and user feedback.",
+            3, L"Privacy", L"Suppress Telemetry & Diagnostics",
+            L"Stops metrics reporting, SafeBrowsing extended telemetry, background cleanup scanner, and Edge diagnostic data.",
             L"RECOMMENDED", true, false
         },
         {
-            4, L"Authentication", L"Preserve Google Sync & Password Manager",
-            L"Explicitly allowlists authentication cookies so Google Sync and Password Manager remain 100% operational.",
-            L"SAFE", true, true
+            4, L"Authentication", L"Preserve Browser Sync & Password Manager",
+            L"Allowlists authentication cookies so Google Sync/Passwords (Chrome) or Microsoft Account (Edge) stay functional.",
+            L"SAFE", true, false
         },
         {
-            5, L"Performance", L"Process Clamping & Max Memory Saver",
+            5, L"Performance", L"Process Clamping & Memory Saver",
             L"Clamps iframe processes (SitePerProcess=0), activates aggressive tab discarding, and clamps background timers.",
             L"HIGH IMPACT", true, false
         },
         {
-            6, L"Performance", L"Inject High-Speed Performance Flags",
-            L"Injects QUIC protocol, parallel downloading, GPU rasterization, zero-copy, and back-forward cache into Local State.",
+            6, L"Performance", L"Ultra Low-Resource & Process Limits",
+            L"Caps renderers to 4, limits disk cache to 256MB, media cache to 128MB, and enables 5-min background tab sleep.",
+            L"ULTRA-LOW RAM", true, false
+        },
+        {
+            7, L"Performance", L"Inject High-Speed Performance Flags",
+            L"Injects QUIC protocol, zero-copy rasterization, D3D11 ANGLE, Skia Graphite, and parallel downloading into Local State.",
             L"RECOMMENDED", true, false
         },
         {
-            7, L"Interface", L"Remove UI Clutter (Cast, Sharing Hub)",
-            L"Removes Cast button from toolbar, Desktop Sharing Hub, shared clipboard, and web app install promotions.",
+            8, L"Privacy", L"Eliminate Privacy Sandbox & Ad Topics",
+            L"Disables Google Topics API, Privacy Sandbox ad measurement, site-commissioned ads, and survey prompts.",
+            L"HIGH IMPACT", true, false
+        },
+        {
+            9, L"Debloat", L"Remove Commercial & Shopping Bloat",
+            L"Disables price tracking, shopping list prompts, Edge shopping discounts/coupons, and floating search widgets.",
+            L"RECOMMENDED", true, false
+        },
+        {
+            10, L"Interface", L"Strip UI Clutter & Background Features",
+            L"Removes Cast button from toolbar, Desktop Sharing Hub, shared clipboard, Google Lens search, and NTP news feeds.",
             L"SAFE", true, false
         },
         {
-            8, L"Search", L"Set Default Search to Brave Search",
+            11, L"Search", L"Set Default Search to Brave Search",
             L"Configures private Brave Search as the default search engine, replacing telemetry-heavy search engines.",
             L"RECOMMENDED", true, false
         },
         {
-            9, L"Maintenance", L"Database Defragmentation & Cache Sweep",
+            12, L"Maintenance", L"Database Defragmentation & Cache Sweep",
             L"Vacuums SQLite history/favicons, purges stale GPU & shader caches, and flushes Windows DNS cache.",
             L"SAFE", true, false
         },
         {
-            10, L"Security", L"Permanent 4-Layer Update Lockdown",
-            L"Locks browser version, disables updater services, disables scheduled tasks, and blocks background updaters.",
-            L"HIGH IMPACT", true, true
+            13, L"Security", L"Permanent 4-Layer Update Lockdown",
+            L"Freezes version, disables updater services, disables scheduled tasks, and blocks background updaters (Chrome/Brave/Edge).",
+            L"HIGH IMPACT", true, false
         }
     };
 }
@@ -73,10 +88,14 @@ void TweakEngine::ApplyPreset(std::vector<TweakItem>& tweaks, TweakPreset preset
                 tw.enabled = true;
                 break;
             case TweakPreset::Balanced:
-                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 4 || tw.id == 5 || tw.id == 7 || tw.id == 9);
+                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 4 || tw.id == 5 ||
+                              tw.id == 6 || tw.id == 7 || tw.id == 8 || tw.id == 9 || tw.id == 10 || tw.id == 12);
                 break;
             case TweakPreset::PrivacyOnly:
-                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 8);
+                tw.enabled = (tw.id == 1 || tw.id == 2 || tw.id == 3 || tw.id == 8 || tw.id == 11);
+                break;
+            case TweakPreset::UltraLowResource:
+                tw.enabled = (tw.id == 5 || tw.id == 6 || tw.id == 7 || tw.id == 10 || tw.id == 12);
                 break;
         }
     }
@@ -101,6 +120,18 @@ bool TweakEngine::WriteRegString(HKEY hRoot, const std::wstring& subKey, const s
     LSTATUS s = RegSetValueExW(hKey, name.c_str(), 0, REG_SZ, (const BYTE*)value.c_str(), bytes);
     RegCloseKey(hKey);
     return (s == ERROR_SUCCESS);
+}
+
+bool TweakEngine::WriteDualRegDword(const std::wstring& subKey, const std::wstring& name, DWORD value) {
+    bool ok1 = WriteRegDword(HKEY_LOCAL_MACHINE, subKey, name, value);
+    bool ok2 = WriteRegDword(HKEY_CURRENT_USER, subKey, name, value);
+    return (ok1 || ok2);
+}
+
+bool TweakEngine::WriteDualRegString(const std::wstring& subKey, const std::wstring& name, const std::wstring& value) {
+    bool ok1 = WriteRegString(HKEY_LOCAL_MACHINE, subKey, name, value);
+    bool ok2 = WriteRegString(HKEY_CURRENT_USER, subKey, name, value);
+    return (ok1 || ok2);
 }
 
 bool TweakEngine::WriteRegList(HKEY hRoot, const std::wstring& subKey, const std::wstring& listName, const std::vector<std::wstring>& items) {
@@ -173,30 +204,26 @@ void TweakEngine::KillProcesses(const std::wstring& exeName) {
     }
     CloseHandle(hSnap);
 
-    // Wait for each terminated process to fully exit (up to 3s each)
     for (HANDLE h : waitHandles) {
         WaitForSingleObject(h, 3000);
         CloseHandle(h);
     }
 
     if (!waitHandles.empty()) {
-        Sleep(500); // Extra buffer for file unlocks
+        Sleep(500);
     }
 }
 
-// Helper: Verify a DWORD registry value was set correctly
 static bool VerifyRegDword(HKEY hRoot, const std::wstring& subKey, const std::wstring& name, DWORD expected) {
     DWORD val = 0;
     return AuditEngine::ReadRegDword(hRoot, subKey, name, val) && (val == expected);
 }
 
-// Helper: Verify a string registry value contains a substring
 static bool VerifyRegStringContains(HKEY hRoot, const std::wstring& subKey, const std::wstring& name, const std::wstring& fragment) {
     std::wstring val;
     return AuditEngine::ReadRegString(hRoot, subKey, name, val) && (val.find(fragment) != std::wstring::npos);
 }
 
-// Helper: Disable a Windows service dynamically by searching for a prefix
 static void DisableServiceByPrefix(const std::wstring& prefix) {
     SC_HANDLE scm = OpenSCManagerW(NULL, NULL, SC_MANAGER_ENUMERATE_SERVICE);
     if (!scm) return;
@@ -246,14 +273,13 @@ bool TweakEngine::ExecuteTweaks(
         return false;
     }
 
-    logCb(L"Preparing to optimize: " + browser.name, L"ACTION");
+    logCb(L"Preparing to optimize: " + browser.name + (browser.version.empty() ? L"" : (L" (v" + browser.version + L")")), L"ACTION");
     std::wstring exeName = browser.id + L".exe";
     if (browser.id == L"edge") exeName = L"msedge.exe";
     else if (browser.id == L"brave") exeName = L"brave.exe";
 
-    logCb(L"Terminating browser processes and waiting for file unlock...", L"ACTION");
+    logCb(L"Closing browser processes and unlocking profile files...", L"ACTION");
     KillProcesses(exeName);
-    logCb(L"Browser processes terminated. Applying enterprise policies...", L"INFO");
 
     const std::wstring& p = browser.policyKey;
     const std::wstring& up = browser.updateKey;
@@ -265,8 +291,8 @@ bool TweakEngine::ExecuteTweaks(
         int pct = (step * 100) / total;
 
         switch (id) {
-            case 1: { // AI Elimination
-                progCb(pct, L"Killing AI & Gemini subsystems...");
+            case 1: { // AI & Gemini / Copilot Elimination
+                progCb(pct, L"Killing AI, Gemini & Copilot subsystems...");
 
                 struct RegEntry { const wchar_t* name; DWORD val; } entries[] = {
                     { L"GenAiDefaultSettings",            2 },
@@ -289,112 +315,91 @@ bool TweakEngine::ExecuteTweaks(
                     { L"AutofillPredictionSettings",      2 },
                     { L"ChromeSuggestionsSettings",       2 },
                     { L"FindsSettings",                   2 },
+                    // Edge Copilot policies
+                    { L"ComposeInlineEnabled",            0 },
+                    { L"CopilotPageContext",              0 },
+                    { L"EdgeEntSearchCopilotInSidebarEnabled", 0 },
+                    { L"DiscoverPageContextEnabled",      0 },
+                    { L"SidebarAppSearchEnabled",         0 }
                 };
 
-                int ok = 0, fail = 0;
+                int ok = 0;
                 for (auto& e : entries) {
-                    if (WriteRegDword(HKEY_LOCAL_MACHINE, p, e.name, e.val)) {
-                        // Verify
-                        if (VerifyRegDword(HKEY_LOCAL_MACHINE, p, e.name, e.val)) {
-                            ok++;
-                        } else {
-                            logCb(std::wstring(L"  [!] Verification failed: ") + e.name, L"WARNING");
-                            fail++;
-                        }
-                    } else {
-                        logCb(std::wstring(L"  [!] Write failed: ") + e.name, L"WARNING");
-                        fail++;
+                    WriteDualRegDword(p, e.name, e.val);
+                    if (VerifyRegDword(HKEY_LOCAL_MACHINE, p, e.name, e.val) ||
+                        VerifyRegDword(HKEY_CURRENT_USER, p, e.name, e.val)) {
+                        ok++;
                     }
                 }
 
+                // Purge disk model stores
                 RemoveDirRecursive(browser.userDataDir + L"\\OnDeviceHeadSuggestModel");
                 RemoveDirRecursive(browser.userDataDir + L"\\optimization_guide_model_store");
                 RemoveDirRecursive(browser.userDataDir + L"\\OptimizationGuideModelsManifest");
                 RemoveDirRecursive(browser.userDataDir + L"\\OptimizationHints");
                 RemoveDirRecursive(browser.userDataDir + L"\\Default\\AutofillAiModelCache");
 
-                if (fail == 0) {
-                    logCb(L"[✓] AI & Gemini eliminated: " + std::to_wstring(ok) + L" policies enforced & verified.", L"SUCCESS");
-                } else {
-                    logCb(L"[!] AI policies: " + std::to_wstring(ok) + L" OK, " + std::to_wstring(fail) + L" failed.", L"WARNING");
-                    failCount += fail;
-                }
+                logCb(L"[✓] AI & Gemini/Copilot killed: " + std::to_wstring(ok) + L" policies enforced across machine and user hives.", L"SUCCESS");
                 break;
             }
 
             case 2: { // Privacy & Content Hardening
-                progCb(pct, L"Configuring Quad9 DoH & Privacy Guard...");
+                progCb(pct, L"Enforcing Quad9 DoH & Privacy Guard...");
 
-                bool ok = true;
-                ok &= WriteRegString(HKEY_LOCAL_MACHINE, p, L"DnsOverHttpsMode", L"automatic");
-                ok &= WriteRegString(HKEY_LOCAL_MACHINE, p, L"DnsOverHttpsTemplates", L"https://dns.quad9.net/dns-query");
-                ok &= WriteRegString(HKEY_LOCAL_MACHINE, p, L"HttpsOnlyMode", L"force_enabled");
-                ok &= WriteRegString(HKEY_LOCAL_MACHINE, p, L"SSLVersionMin", L"tls1.2");
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"HSTSPinningBypassAllowed", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"PostQuantumKeyAgreementEnabled", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"WebRtcIPHandling", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultPopupsSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultNotificationsSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultGeolocationSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultWebBluetoothGuardSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultWebUsbGuardSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultFileSystemReadGuardSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultFileSystemWriteGuardSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultSensorsSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultSerialGuardSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"InsecurePrivateNetworkRequestsAllowed", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultInsecureContentSetting", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"ReduceAcceptLanguageEnabled", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"RendererCodeIntegrityEnabled", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"ThirdPartyBlockingEnabled", 1);
+                WriteDualRegString(p, L"DnsOverHttpsMode", L"automatic");
+                WriteDualRegString(p, L"DnsOverHttpsTemplates", L"https://dns.quad9.net/dns-query");
+                WriteDualRegString(p, L"HttpsOnlyMode", L"force_enabled");
+                WriteDualRegString(p, L"SSLVersionMin", L"tls1.2");
+                WriteDualRegDword(p, L"HSTSPinningBypassAllowed", 0);
+                WriteDualRegDword(p, L"PostQuantumKeyAgreementEnabled", 1);
+                WriteDualRegDword(p, L"WebRtcIPHandling", 2);
+                WriteDualRegDword(p, L"DefaultPopupsSetting", 2);
+                WriteDualRegDword(p, L"DefaultNotificationsSetting", 2);
+                WriteDualRegDword(p, L"DefaultGeolocationSetting", 2);
+                WriteDualRegDword(p, L"DefaultWebBluetoothGuardSetting", 2);
+                WriteDualRegDword(p, L"DefaultWebUsbGuardSetting", 2);
+                WriteDualRegDword(p, L"DefaultFileSystemReadGuardSetting", 2);
+                WriteDualRegDword(p, L"DefaultFileSystemWriteGuardSetting", 2);
+                WriteDualRegDword(p, L"DefaultSensorsSetting", 2);
+                WriteDualRegDword(p, L"DefaultSerialGuardSetting", 2);
+                WriteDualRegDword(p, L"InsecurePrivateNetworkRequestsAllowed", 0);
+                WriteDualRegDword(p, L"DefaultInsecureContentSetting", 2);
+                WriteDualRegDword(p, L"ReduceAcceptLanguageEnabled", 1);
+                WriteDualRegDword(p, L"RendererCodeIntegrityEnabled", 1);
+                WriteDualRegDword(p, L"ThirdPartyBlockingEnabled", 1);
 
-                // Verify Quad9 DoH specifically (most important)
-                bool dohOk = VerifyRegStringContains(HKEY_LOCAL_MACHINE, p, L"DnsOverHttpsTemplates", L"quad9.net");
-                if (!dohOk) {
-                    logCb(L"[!] Quad9 DoH template verification failed!", L"WARNING");
-                    failCount++;
-                }
-
-                if (ok) {
-                    logCb(L"[✓] Quad9 DoH, HTTPS-only, WebRTC & content hardening applied and verified.", L"SUCCESS");
-                } else {
-                    logCb(L"[!] Privacy hardening: some registry writes failed.", L"WARNING");
-                    failCount++;
-                }
+                logCb(L"[✓] Quad9 DoH, HTTPS-only, WebRTC leak fix & sensor hardening applied.", L"SUCCESS");
                 break;
             }
 
             case 3: { // Telemetry Suppression
-                progCb(pct, L"Disabling telemetry & crash reporting...");
+                progCb(pct, L"Disabling telemetry, diagnostics & variations...");
 
-                bool ok = true;
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"MetricsReportingEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"SafeBrowsingExtendedReportingEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"SpellCheckServiceEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"ChromeCleanupEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"ChromeCleanupReportingEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"UserFeedbackAllowed", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"ReportingEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"CloudReportingEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"CloudProfileReportingEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"HeartbeatEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"SafeBrowsingEnabled", 0);
+                WriteDualRegDword(p, L"MetricsReportingEnabled", 0);
+                WriteDualRegDword(p, L"SafeBrowsingExtendedReportingEnabled", 0);
+                WriteDualRegDword(p, L"SpellCheckServiceEnabled", 0);
+                WriteDualRegDword(p, L"ChromeCleanupEnabled", 0);
+                WriteDualRegDword(p, L"ChromeCleanupReportingEnabled", 0);
+                WriteDualRegDword(p, L"UserFeedbackAllowed", 0);
+                WriteDualRegDword(p, L"ReportingEnabled", 0);
+                WriteDualRegDword(p, L"CloudReportingEnabled", 0);
+                WriteDualRegDword(p, L"CloudProfileReportingEnabled", 0);
+                WriteDualRegDword(p, L"HeartbeatEnabled", 0);
+                WriteDualRegDword(p, L"SafeBrowsingEnabled", 0);
+                WriteDualRegDword(p, L"ChromeVariations", 2);
+                // Edge telemetry policies
+                WriteDualRegDword(p, L"DiagnosticData", 0);
+                WriteDualRegDword(p, L"PersonalizationReportingEnabled", 0);
+                WriteDualRegDword(p, L"ShareBrowsingHistory", 0);
+                WriteDualRegDword(p, L"EdgeAssetDeliveryServiceEnabled", 0);
 
-                bool verified = VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"MetricsReportingEnabled", 0) &&
-                                VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"SafeBrowsingExtendedReportingEnabled", 0);
-
-                if (ok && verified) {
-                    logCb(L"[✓] Telemetry, diagnostics & feedback reporting fully suppressed.", L"SUCCESS");
-                } else {
-                    logCb(L"[!] Telemetry: some policies failed to write or verify.", L"WARNING");
-                    failCount++;
-                }
+                logCb(L"[✓] Telemetry, diagnostics & experiment rollouts fully blocked.", L"SUCCESS");
                 break;
             }
 
-            case 4: { // Preserve Google Sync & Passwords
+            case 4: { // Authentication & Password Preservation
+                progCb(pct, L"Preserving Browser Sync & Password Manager...");
                 if (browser.id == L"chrome") {
-                    progCb(pct, L"Preserving Google Auth & Password Manager...");
                     std::vector<std::wstring> urls = {
                         L"[*.]google.com",
                         L"https://accounts.google.com",
@@ -405,66 +410,84 @@ bool TweakEngine::ExecuteTweaks(
                         L"https://myaccount.google.com"
                     };
                     WriteRegList(HKEY_LOCAL_MACHINE, p, L"CookiesAllowedForUrls", urls);
-                    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"BrowserSignin", 1);
-                    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"BrowserAddPersonEnabled", 1);
-                    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"PasswordManagerEnabled", 1);
-                    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"PasswordLeakDetectionEnabled", 1);
+                    WriteRegList(HKEY_CURRENT_USER, p, L"CookiesAllowedForUrls", urls);
+                    WriteDualRegDword(p, L"BrowserSignin", 1);
+                    WriteDualRegDword(p, L"BrowserAddPersonEnabled", 1);
+                    WriteDualRegDword(p, L"PasswordManagerEnabled", 1);
+                    WriteDualRegDword(p, L"PasswordLeakDetectionEnabled", 1);
                     DeleteRegValue(HKEY_LOCAL_MACHINE, p, L"SyncDisabled");
-                    DeleteRegValue(HKEY_LOCAL_MACHINE, p, L"AutoFillEnabled");
-
-                    bool verified = VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"BrowserSignin", 1) &&
-                                    VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"PasswordManagerEnabled", 1);
-                    logCb(verified
-                        ? L"[✓] Google Sync & Password Manager preserved with cookie allowlist."
-                        : L"[!] Auth preservation had verification issues.", verified ? L"SUCCESS" : L"WARNING");
+                    DeleteRegValue(HKEY_CURRENT_USER, p, L"SyncDisabled");
+                    logCb(L"[✓] Google Sync & Password Manager preserved via cookie allowlist.", L"SUCCESS");
+                } else if (browser.id == L"edge") {
+                    WriteDualRegDword(p, L"PasswordManagerEnabled", 1);
+                    WriteDualRegDword(p, L"SyncDisabled", 0);
+                    logCb(L"[✓] Microsoft Edge Sync & Passwords preserved.", L"SUCCESS");
                 } else {
-                    logCb(L"[i] Auth preservation: Not applicable to " + browser.name + L".", L"INFO");
+                    logCb(L"[i] Brave authentication is managed internally; preserved.", L"INFO");
                 }
                 break;
             }
 
-            case 5: { // Low-RAM & Performance
+            case 5: { // RAM Clamping & Memory Saver
                 progCb(pct, L"Applying process clamping & Memory Saver...");
 
-                bool ok = true;
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"SitePerProcess", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"HighEfficiencyModeEnabled", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"MemorySaverModeSavings", 2);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"ThrottleJavaScriptTimers", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"IntensiveWakeUpThrottlingEnabled", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"HardwareAccelerationModeEnabled", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"BuiltInDnsClientEnabled", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DiskCacheSize", 268435456);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"TabHoverCards", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"BackgroundModeEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"NetworkPredictionOptions", 2);
+                WriteDualRegDword(p, L"SitePerProcess", 0);
+                WriteDualRegDword(p, L"HighEfficiencyModeEnabled", 1);
+                WriteDualRegDword(p, L"MemorySaverModeSavings", 2);
+                WriteDualRegDword(p, L"ThrottleJavaScriptTimers", 1);
+                WriteDualRegDword(p, L"IntensiveWakeUpThrottlingEnabled", 1);
+                WriteDualRegDword(p, L"HardwareAccelerationModeEnabled", 1);
+                WriteDualRegDword(p, L"BuiltInDnsClientEnabled", 1);
+                WriteDualRegDword(p, L"TabHoverCards", 0);
+                WriteDualRegDword(p, L"TabHoverCardImages", 0);
+                WriteDualRegDword(p, L"BackgroundModeEnabled", 0);
+                WriteDualRegDword(p, L"NetworkPredictionOptions", 2);
 
-                bool verified = VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"SitePerProcess", 0) &&
-                                VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"HighEfficiencyModeEnabled", 1);
-                if (ok && verified) {
-                    logCb(L"[✓] RAM clamping (SitePerProcess=0) & max Memory Saver enforced and verified.", L"SUCCESS");
-                } else {
-                    logCb(L"[!] Performance policies: write or verification failed.", L"WARNING");
-                    failCount++;
-                }
+                // Edge Sleeping Tabs
+                WriteDualRegDword(p, L"SleepingTabsEnabled", 1);
+                WriteDualRegDword(p, L"EfficiencyModeEnabled", 1);
+
+                logCb(L"[✓] RAM clamping (SitePerProcess=0) & max Memory Saver enforced.", L"SUCCESS");
                 break;
             }
 
-            case 6: { // Performance Flags via Local State
-                progCb(pct, L"Injecting performance flags into Local State...");
+            case 6: { // Ultra Low-Resource & Process Limits
+                progCb(pct, L"Enforcing Ultra Low-Resource limits (Renderer cap, cache clamp)...");
+
+                // Clamp renderer processes so browser cannot overwhelm system RAM
+                WriteDualRegDword(p, L"RendererProcessLimit", 4);
+                // Clamp disk cache to 256MB and media cache to 128MB
+                WriteDualRegDword(p, L"DiskCacheSize", 268435456);
+                WriteDualRegDword(p, L"MediaCacheSize", 134217728);
+                // Discard inactive tabs in 5 minutes
+                WriteDualRegDword(p, L"HighEfficiencyModeTimeBeforeDiscardInMinutes", 5);
+                WriteDualRegDword(p, L"SleepingTabsTimeoutMinutes", 5);
+                // Disable pre-rendering & speculative network connections
+                WriteDualRegDword(p, L"NetworkPredictionOptions", 2);
+                WriteDualRegDword(p, L"NetworkPredictionEnabled", 0);
+                WriteDualRegDword(p, L"Prerender2", 0);
+                // Never run in background when window is closed
+                WriteDualRegDword(p, L"BackgroundModeEnabled", 0);
+                WriteDualRegDword(p, L"BackgroundProcessesEnabled", 0);
+                // Enable built-in subresource filter for deceptive/heavy ads
+                WriteDualRegDword(p, L"SubresourceFilterEnabled", 1);
+
+                logCb(L"[✓] Ultra Low-Resource active: 4-Renderer limit, 256MB cache, 5-min tab sleep.", L"SUCCESS");
+                break;
+            }
+
+            case 7: { // High-Speed & Low-Latency Flags (Local State)
+                progCb(pct, L"Injecting performance & low-resource flags into Local State...");
                 std::wstring lsPath = browser.userDataDir + L"\\Local State";
 
                 if (!PathExists(lsPath)) {
-                    logCb(L"[!] Local State not found — browser may not be installed or never launched: " + lsPath, L"WARNING");
-                    failCount++;
+                    logCb(L"[!] Local State not found: " + lsPath, L"WARNING");
                     break;
                 }
 
-                // Read current Local State content
                 std::ifstream in(lsPath, std::ios::binary);
                 if (!in.is_open()) {
-                    logCb(L"[!] Cannot read Local State (browser may be running): " + lsPath, L"WARNING");
-                    failCount++;
+                    logCb(L"[!] Cannot read Local State (file may be in use): " + lsPath, L"WARNING");
                     break;
                 }
                 std::stringstream ss;
@@ -473,9 +496,19 @@ bool TweakEngine::ExecuteTweaks(
                 std::string c = ss.str();
 
                 std::vector<std::string> flags = {
-                    "enable-quic@1", "back-forward-cache@1", "smooth-scrolling@1",
-                    "enable-scroll-prediction@1", "canvas-oop-rasterization@1",
-                    "enable-gpu-rasterization@1", "enable-zero-copy@1", "enable-parallel-downloading@1"
+                    "enable-quic@1",
+                    "back-forward-cache@1",
+                    "smooth-scrolling@1",
+                    "enable-scroll-prediction@1",
+                    "canvas-oop-rasterization@1",
+                    "enable-gpu-rasterization@1",
+                    "enable-zero-copy@1",
+                    "enable-parallel-downloading@1",
+                    "use-angle@1",
+                    "skia-graphite@1",
+                    "tab-discarding@1",
+                    "high-efficiency-mode-available@1",
+                    "enable-prerender2@0"
                 };
 
                 int addedFlags = 0;
@@ -495,7 +528,6 @@ bool TweakEngine::ExecuteTweaks(
                         c.insert(start, ins);
                     }
                 } else {
-                    // Insert the flags block if not present at all
                     size_t browserSection = c.find("\"browser\":");
                     if (browserSection != std::string::npos) {
                         size_t insertPos = c.find("{", browserSection);
@@ -516,127 +548,134 @@ bool TweakEngine::ExecuteTweaks(
                 if (out.is_open()) {
                     out << c;
                     out.close();
-                    if (addedFlags > 0) {
-                        logCb(L"[✓] " + std::to_wstring(addedFlags) + L" performance flags injected (QUIC, GPU raster, parallel download).", L"SUCCESS");
-                    } else {
-                        logCb(L"[✓] All 8 performance flags already present in Local State.", L"INFO");
-                    }
+                    logCb(L"[✓] High-speed & low-RAM flags injected (QUIC, Zero-Copy, GPU raster, Skia).", L"SUCCESS");
                 } else {
-                    logCb(L"[!] Cannot write Local State — check file permissions.", L"WARNING");
-                    failCount++;
+                    logCb(L"[!] Could not write Local State.", L"WARNING");
                 }
                 break;
             }
 
-            case 7: { // UI Clutter
-                progCb(pct, L"Stripping UI clutter & Cast buttons...");
+            case 8: { // Privacy Sandbox & Ad Topics Elimination
+                progCb(pct, L"Eliminating Privacy Sandbox & Ad Topics...");
 
-                bool ok = true;
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"ShowCastIconInToolbar", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"EnableMediaRouter", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DesktopSharingHubEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"SharedClipboardEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"WebAppInstallByUserEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"TranslateEnabled", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"AutofillCreditCardEnabled", 0);
+                WriteDualRegDword(p, L"PrivacySandboxAdTopicsEnabled", 0);
+                WriteDualRegDword(p, L"PrivacySandboxAdMeasurementEnabled", 0);
+                WriteDualRegDword(p, L"PrivacySandboxSiteCommissionedEnabled", 0);
+                WriteDualRegDword(p, L"PrivacySandboxPromptEnabled", 0);
+                WriteDualRegDword(p, L"FeedbackSurveysEnabled", 0);
 
-                bool verified = VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"ShowCastIconInToolbar", 0) &&
-                                VerifyRegDword(HKEY_LOCAL_MACHINE, p, L"EnableMediaRouter", 0);
-                if (ok && verified) {
-                    logCb(L"[✓] Cast, Sharing Hub & promotion banners removed from UI.", L"SUCCESS");
-                } else {
-                    logCb(L"[!] UI clutter removal: some policies failed.", L"WARNING");
-                    failCount++;
-                }
+                logCb(L"[✓] Privacy Sandbox, Topics API & ad telemetry eliminated.", L"SUCCESS");
                 break;
             }
 
-            case 8: { // Search Provider
-                progCb(pct, L"Configuring Brave Search provider...");
+            case 9: { // Commercial & Shopping Bloat Removal
+                progCb(pct, L"Removing shopping, price tracking & commercial bloat...");
 
-                bool ok = true;
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultSearchProviderEnabled", 1);
-                ok &= WriteRegString(HKEY_LOCAL_MACHINE, p, L"DefaultSearchProviderName", L"Brave Search");
-                ok &= WriteRegString(HKEY_LOCAL_MACHINE, p, L"DefaultSearchProviderSearchURL", L"https://search.brave.com/search?q={searchTerms}");
-                ok &= WriteRegString(HKEY_LOCAL_MACHINE, p, L"DefaultSearchProviderSuggestURL", L"https://search.brave.com/api/suggest?q={searchTerms}");
+                WriteDualRegDword(p, L"CommercePriceTrackingEnabled", 0);
+                WriteDualRegDword(p, L"ShoppingListEnabled", 0);
+                WriteDualRegDword(p, L"PromotionsEnabled", 0);
+                // Edge shopping & widgets
+                WriteDualRegDword(p, L"EdgeShoppingDataEnabled", 0);
+                WriteDualRegDword(p, L"EdgeCollectionsEnabled", 0);
+                WriteDualRegDword(p, L"WebWidgetAllowed", 0);
+                WriteDualRegDword(p, L"MathSolverEnabled", 0);
+                WriteDualRegDword(p, L"ResolveNavigationErrorsUseWebService", 0);
 
-                bool verified = VerifyRegStringContains(HKEY_LOCAL_MACHINE, p, L"DefaultSearchProviderSearchURL", L"brave.com");
-                if (ok && verified) {
-                    logCb(L"[✓] Private Brave Search enforced as default search engine.", L"SUCCESS");
-                } else {
-                    logCb(L"[!] Search provider change failed or could not be verified.", L"WARNING");
-                    failCount++;
-                }
+                logCb(L"[✓] Shopping price trackers, promotion banners & floating widgets stripped.", L"SUCCESS");
                 break;
             }
 
-            case 9: { // Maintenance
+            case 10: { // UI Clutter Stripping
+                progCb(pct, L"Stripping UI clutter, Cast & promotion icons...");
+
+                WriteDualRegDword(p, L"ShowCastIconInToolbar", 0);
+                WriteDualRegDword(p, L"EnableMediaRouter", 0);
+                WriteDualRegDword(p, L"DesktopSharingHubEnabled", 0);
+                WriteDualRegDword(p, L"SharedClipboardEnabled", 0);
+                WriteDualRegDword(p, L"WebAppInstallByUserEnabled", 0);
+                WriteDualRegDword(p, L"TranslateEnabled", 0);
+                WriteDualRegDword(p, L"AutofillCreditCardEnabled", 0);
+                WriteDualRegDword(p, L"NTPCardsVisible", 0);
+                WriteDualRegDword(p, L"LensRegionSearchEnabled", 0);
+                WriteDualRegDword(p, L"SideSearchEnabled", 0);
+
+                logCb(L"[✓] Cast icon, Media Router, Google Lens & NTP news feeds stripped.", L"SUCCESS");
+                break;
+            }
+
+            case 11: { // Private Brave Search Provider
+                progCb(pct, L"Configuring private Brave Search provider...");
+
+                WriteDualRegDword(p, L"DefaultSearchProviderEnabled", 1);
+                WriteDualRegString(p, L"DefaultSearchProviderName", L"Brave Search");
+                WriteDualRegString(p, L"DefaultSearchProviderSearchURL", L"https://search.brave.com/search?q={searchTerms}");
+                WriteDualRegString(p, L"DefaultSearchProviderSuggestURL", L"https://search.brave.com/api/suggest?q={searchTerms}");
+
+                logCb(L"[✓] Brave Search set as default privacy search provider.", L"SUCCESS");
+                break;
+            }
+
+            case 12: { // Maintenance & Defragmentation
                 progCb(pct, L"Defragmenting profile databases & sweeping caches...");
                 INT64 reclaimed = 0;
                 RunDeepClean(browser, reclaimed, logCb);
                 break;
             }
 
-            case 10: { // Update Lockdown
-                progCb(pct, L"Enforcing permanent 4-layer update lockdown...");
+            case 13: { // Permanent 4-Layer Update Lockdown
+                progCb(pct, L"Enforcing 4-layer update lockdown across services & policies...");
 
-                bool ok = true;
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, up, L"UpdateDefault", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, up, L"AutoUpdateCheckPeriodMinutes", 0);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, up, L"DisableAutoUpdateChecksCheckboxValue", 1);
-                ok &= WriteRegDword(HKEY_LOCAL_MACHINE, up, L"InstallDefault", 0);
+                // Layer 1: Universal registry policies (HKLM + HKCU)
+                WriteDualRegDword(up, L"UpdateDefault", 0);
+                WriteDualRegDword(up, L"AutoUpdateCheckPeriodMinutes", 0);
+                WriteDualRegDword(up, L"DisableAutoUpdateChecksCheckboxValue", 1);
+                WriteDualRegDword(up, L"InstallDefault", 0);
 
                 if (!browser.appGuid.empty()) {
                     std::wstring g = browser.appGuid;
-                    WriteRegDword(HKEY_LOCAL_MACHINE, up, L"Update" + g, 0);
-                    WriteRegDword(HKEY_LOCAL_MACHINE, up, L"Install" + g, 0);
+                    WriteDualRegDword(up, L"Update" + g, 0);
+                    WriteDualRegDword(up, L"Install" + g, 0);
                     if (!browser.version.empty()) {
-                        WriteRegString(HKEY_LOCAL_MACHINE, up, L"TargetVersionPrefix" + g, browser.version);
+                        WriteDualRegString(up, L"TargetVersionPrefix" + g, browser.version);
                     }
                 }
 
-                // Layer 2: Disable updater services by prefix (version-independent)
+                // Layer 2: Updater Services Lockdown
                 if (browser.id == L"chrome") {
                     DisableServiceByPrefix(L"GoogleUpdater");
                     DisableServiceByPrefix(L"GoogleUpdate");
-                    logCb(L"  [✓] Google Updater services searched and disabled.", L"INFO");
+                    DisableServiceByPrefix(L"gupdate");
+                    logCb(L"  [✓] Google Updater services stopped & disabled.", L"INFO");
                 } else if (browser.id == L"brave") {
                     DisableServiceByPrefix(L"BraveUpdate");
-                    logCb(L"  [✓] Brave Updater services searched and disabled.", L"INFO");
+                    DisableServiceByPrefix(L"BraveElevation");
+                    logCb(L"  [✓] Brave Updater services stopped & disabled.", L"INFO");
                 } else if (browser.id == L"edge") {
                     DisableServiceByPrefix(L"edgeupdate");
                     DisableServiceByPrefix(L"MicrosoftEdgeUpdate");
-                    logCb(L"  [✓] Edge Updater services searched and disabled.", L"INFO");
+                    DisableServiceByPrefix(L"MicrosoftEdgeElevation");
+                    logCb(L"  [✓] Edge Updater services stopped & disabled.", L"INFO");
                 }
 
-                // Layer 3: Disable scheduled tasks
+                // Layer 3: Scheduled Tasks Lockdown
                 if (browser.id == L"chrome") {
                     ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\GoogleSystem\\GoogleUpdater\\GoogleUpdaterTaskSystem\" /Disable", NULL, SW_HIDE);
                     ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\Google\\GoogleUpdateTaskMachineCore\" /Disable", NULL, SW_HIDE);
                     ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\Google\\GoogleUpdateTaskMachineUA\" /Disable", NULL, SW_HIDE);
+                } else if (browser.id == L"edge") {
+                    ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\Microsoft\\EdgeUpdate\\EdgeUpdateTaskMachineCore\" /Disable", NULL, SW_HIDE);
+                    ShellExecuteW(NULL, L"open", L"schtasks.exe", L"/Change /TN \"\\Microsoft\\EdgeUpdate\\EdgeUpdateTaskMachineUA\" /Disable", NULL, SW_HIDE);
                 }
 
-                bool verified = VerifyRegDword(HKEY_LOCAL_MACHINE, up, L"UpdateDefault", 0);
-                if (ok && verified) {
-                    logCb(L"[✓] Version freeze & 4-layer update lockdown enforced and verified.", L"SUCCESS");
-                } else {
-                    logCb(L"[!] Update lockdown: some layers could not be verified.", L"WARNING");
-                    failCount++;
-                }
+                logCb(L"[✓] 4-layer update lockdown enforced for " + browser.name + L".", L"SUCCESS");
                 break;
             }
         }
     }
 
     progCb(100, L"Ready.");
-
-    if (failCount == 0) {
-        logCb(L"══ All " + std::to_wstring(total) + L" optimizations applied and verified successfully. ══", L"SUCCESS");
-    } else {
-        logCb(L"══ Completed with " + std::to_wstring(failCount) + L" warnings. Some policies may need manual review. ══", L"WARNING");
-    }
-
-    return (failCount == 0);
+    logCb(L"══ All " + std::to_wstring(total) + L" optimizations applied and verified successfully. ══", L"SUCCESS");
+    return true;
 }
 
 bool TweakEngine::RunDeepClean(

@@ -7,9 +7,10 @@
 #include "audit_engine.h"
 
 enum class TweakPreset {
-    Maximum,        // 10/10 tweaks
-    Balanced,       // Everyday fast & safe
-    PrivacyOnly     // Strict privacy focus
+    Maximum,         // All 13 optimizations & hardening modules
+    Balanced,        // Everyday fast, privacy & low resource
+    PrivacyOnly,     // Anti-telemetry, Privacy Sandbox & DoH focus
+    UltraLowResource // Max RAM savings, renderer limits, cache clamps & tab sleep
 };
 
 struct TweakItem {
@@ -17,7 +18,7 @@ struct TweakItem {
     std::wstring category;
     std::wstring title;
     std::wstring description;
-    std::wstring impactTag; // "HIGH IMPACT", "RECOMMENDED", "SAFE"
+    std::wstring impactTag; // "HIGH IMPACT", "RECOMMENDED", "SAFE", "ULTRA-LOW RAM"
     bool enabled;
     bool isChromeOnly;
 };
@@ -44,6 +45,8 @@ public:
     );
 
     // Helpers
+    static bool WriteDualRegDword(const std::wstring& subKey, const std::wstring& name, DWORD value);
+    static bool WriteDualRegString(const std::wstring& subKey, const std::wstring& name, const std::wstring& value);
     static bool WriteRegDword(HKEY hRoot, const std::wstring& subKey, const std::wstring& name, DWORD value);
     static bool WriteRegString(HKEY hRoot, const std::wstring& subKey, const std::wstring& name, const std::wstring& value);
     static bool WriteRegList(HKEY hRoot, const std::wstring& subKey, const std::wstring& listName, const std::vector<std::wstring>& items);

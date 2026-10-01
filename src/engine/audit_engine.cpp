@@ -58,16 +58,28 @@ INT64 AuditEngine::CalculateDirectorySize(const std::wstring& dirPath) {
     return total;
 }
 
+static bool CheckDword(HKEY root, const std::wstring& subKey, const std::wstring& name, DWORD expected) {
+    DWORD val = 0;
+    return AuditEngine::ReadRegDword(root, subKey, name, val) && (val == expected);
+}
+
+static bool CheckDualDword(const std::wstring& subKey, const std::wstring& name, DWORD expected) {
+    return CheckDword(HKEY_LOCAL_MACHINE, subKey, name, expected) ||
+           CheckDword(HKEY_CURRENT_USER, subKey, name, expected);
+}
+
 AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     AuditReport report;
     const std::wstring& p = browser.policyKey;
     const std::wstring& up = browser.updateKey;
 
-    // 1. AI & Gemini Subsystems
-    DWORD aiVal = 0;
-    bool aiDisabled = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"GenAiDefaultSettings", aiVal) && (aiVal == 2);
-    DWORD optGuide = 1;
-    bool optDisabled = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"OptimizationGuideAllowed", optGuide) && (optGuide == 0);
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1. AI & Gemini / Copilot Subsystems
+    // ─────────────────────────────────────────────────────────────────────────
+    bool aiDisabled = CheckDualDword(p, L"GenAiDefaultSettings", 2) || CheckDualDword(p, L"OptimizationGuideAllowed", 0);
+    if (browser.id == L"edge") {
+        aiDisabled = aiDisabled || CheckDualDword(p, L"ComposeInlineEnabled", 0);
+    }
     
     INT64 aiModelSize = 0;
     aiModelSize += CalculateDirectorySize(browser.userDataDir + L"\\OnDeviceHeadSuggestModel");
@@ -78,49 +90,54 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     AuditItem itemAi;
     itemAi.id = 1;
     itemAi.category = L"AI & Models";
-    itemAi.name = L"AI & Gemini Subsystems";
-    if (aiDisabled && optDisabled && aiModelSize == 0) {
+    itemAi.name = L"AI & Gemini/Copilot Subsystems";
+    if (aiDisabled && aiModelSize == 0) {
         itemAi.status = AuditStatus::Optimized;
-        itemAi.description = L"All AI & Gemini policies killed. 0 local models present.";
-        itemAi.recommendation = L"No action needed.";
+        itemAi.description = L"AI features blocked by enterprise policy. 0 on-disk models found.";
+        itemAi.recommendation = L"Protected.";
         report.optimizedCount++;
     } else {
         itemAi.status = AuditStatus::Bloated;
-        itemAi.description = L"AI features are active or on-disk local models found.";
-        itemAi.recommendation = L"Apply AI elimination policy and purge model stores.";
+        itemAi.description = L"AI features active or foundational model files present on disk.";
+        itemAi.recommendation = L"Apply AI elimination policy & model purge.";
         report.bloatedCount++;
     }
     report.items.push_back(itemAi);
     report.reclaimableBytes += aiModelSize;
 
-    // 2. Telemetry & Metrics
-    DWORD metrics = 1;
-    bool metricsOff = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"MetricsReportingEnabled", metrics) && (metrics == 0);
-    DWORD sbExt = 1;
-    bool sbOff = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"SafeBrowsingExtendedReportingEnabled", sbExt) && (sbExt == 0);
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2. Telemetry, Crash Reports & Diagnostics
+    // ─────────────────────────────────────────────────────────────────────────
+    bool metricsOff = CheckDualDword(p, L"MetricsReportingEnabled", 0);
+    bool sbOff = CheckDualDword(p, L"SafeBrowsingExtendedReportingEnabled", 0);
 
     AuditItem itemTel;
     itemTel.id = 2;
     itemTel.category = L"Privacy";
-    itemTel.name = L"Telemetry & Diagnostics";
+    itemTel.name = L"Telemetry & Diagnostic Reporting";
     if (metricsOff && sbOff) {
         itemTel.status = AuditStatus::Optimized;
-        itemTel.description = L"Google telemetry and diagnostic logging disabled.";
-        itemTel.recommendation = L"No action needed.";
+        itemTel.description = L"Telemetry, background diagnostics and variations blocked.";
+        itemTel.recommendation = L"Protected.";
         report.optimizedCount++;
     } else {
         itemTel.status = AuditStatus::Bloated;
-        itemTel.description = L"Telemetry and diagnostic reporting active.";
-        itemTel.recommendation = L"Suppress telemetry and metrics reporting.";
+        itemTel.description = L"Diagnostic telemetry and crash reports actively transmitting.";
+        itemTel.recommendation = L"Suppress telemetry & background diagnostics.";
         report.bloatedCount++;
     }
     report.items.push_back(itemTel);
 
-    // 3. DNS-over-HTTPS (Quad9)
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3. DNS-over-HTTPS (Quad9 Encrypted DNS)
+    // ─────────────────────────────────────────────────────────────────────────
     std::wstring dohMode, dohTpl;
     ReadRegString(HKEY_LOCAL_MACHINE, p, L"DnsOverHttpsMode", dohMode);
     ReadRegString(HKEY_LOCAL_MACHINE, p, L"DnsOverHttpsTemplates", dohTpl);
-    bool dohOk = (!dohMode.empty() && dohTpl.find(L"quad9.net") != std::wstring::npos);
+    if (dohTpl.empty()) {
+        ReadRegString(HKEY_CURRENT_USER, p, L"DnsOverHttpsTemplates", dohTpl);
+    }
+    bool dohOk = (!dohTpl.empty() && dohTpl.find(L"quad9.net") != std::wstring::npos);
 
     AuditItem itemDoh;
     itemDoh.id = 3;
@@ -128,69 +145,133 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     itemDoh.name = L"Encrypted DNS (Quad9 DoH)";
     if (dohOk) {
         itemDoh.status = AuditStatus::Optimized;
-        itemDoh.description = L"Encrypted Quad9 DoH active.";
-        itemDoh.recommendation = L"No action needed.";
+        itemDoh.description = L"Encrypted Quad9 DoH active (malware blocking + no logs).";
+        itemDoh.recommendation = L"Protected.";
         report.optimizedCount++;
     } else {
         itemDoh.status = AuditStatus::Bloated;
-        itemDoh.description = L"Standard unencrypted DNS or browser default.";
+        itemDoh.description = L"Unencrypted plaintext ISP DNS or default resolver active.";
         itemDoh.recommendation = L"Enforce Quad9 secure DoH.";
         report.bloatedCount++;
     }
     report.items.push_back(itemDoh);
 
-    // 4. Memory Saver & Process Multiplier
-    DWORD spp = 1;
-    bool sppOff = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"SitePerProcess", spp) && (spp == 0);
-    DWORD memSav = 0;
-    bool memSavOn = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"HighEfficiencyModeEnabled", memSav) && (memSav == 1);
+    // ─────────────────────────────────────────────────────────────────────────
+    // 4. Memory Saver & Process Clamping
+    // ─────────────────────────────────────────────────────────────────────────
+    bool sppOff = CheckDualDword(p, L"SitePerProcess", 0);
+    bool memSavOn = CheckDualDword(p, L"HighEfficiencyModeEnabled", 1) || CheckDualDword(p, L"EfficiencyModeEnabled", 1);
 
     AuditItem itemPerf;
     itemPerf.id = 4;
     itemPerf.category = L"Performance";
-    itemPerf.name = L"Memory Saver & Process Isolation";
+    itemPerf.name = L"Memory Saver & Process Clamping";
     if (sppOff && memSavOn) {
         itemPerf.status = AuditStatus::Optimized;
-        itemPerf.description = L"Process consolidation active (SitePerProcess=0) and max Memory Saver enabled.";
-        itemPerf.recommendation = L"No action needed.";
+        itemPerf.description = L"Process clamping (SitePerProcess=0) and Memory Saver active.";
+        itemPerf.recommendation = L"Optimized.";
         report.optimizedCount++;
     } else {
         itemPerf.status = AuditStatus::Bloated;
-        itemPerf.description = L"High RAM consumption from aggressive iframe sub-processes.";
-        itemPerf.recommendation = L"Clamp iframe processes and enable aggressive tab discard.";
+        itemPerf.description = L"High RAM consumption: iframe multiplier enabled without clamping.";
+        itemPerf.recommendation = L"Clamp subframe processes & enable Memory Saver.";
         report.bloatedCount++;
     }
     report.items.push_back(itemPerf);
 
-    // 5. Google Authentication (Sync & Passwords)
-    AuditItem itemAuth;
-    itemAuth.id = 5;
-    itemAuth.category = L"Authentication";
-    itemAuth.name = L"Google Sync & Password Manager";
-    if (browser.id == L"chrome") {
-        DWORD signin = 0, pwd = 0;
-        bool signinOk = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"BrowserSignin", signin) && (signin == 1);
-        bool pwdOk = ReadRegDword(HKEY_LOCAL_MACHINE, p, L"PasswordManagerEnabled", pwd) && (pwd == 1);
+    // ─────────────────────────────────────────────────────────────────────────
+    // 5. Ultra Low-Resource Limits
+    // ─────────────────────────────────────────────────────────────────────────
+    bool procLimit = CheckDualDword(p, L"RendererProcessLimit", 4);
+    bool cacheLimit = CheckDualDword(p, L"DiskCacheSize", 268435456);
+    bool prefetchOff = CheckDualDword(p, L"NetworkPredictionOptions", 2);
 
-        if (signinOk && pwdOk) {
-            itemAuth.status = AuditStatus::Optimized;
-            itemAuth.description = L"Google Sync and Password Manager enabled with cookie allowlist.";
-            itemAuth.recommendation = L"Preserved.";
-            report.optimizedCount++;
-        } else {
-            itemAuth.status = AuditStatus::Attention;
-            itemAuth.description = L"Sync or Passwords might be restricted.";
-            itemAuth.recommendation = L"Preserve auth cookie allowlist.";
-            report.bloatedCount++;
-        }
+    AuditItem itemUltra;
+    itemUltra.id = 5;
+    itemUltra.category = L"Performance";
+    itemUltra.name = L"Ultra Low-Resource Limits";
+    if (procLimit && cacheLimit && prefetchOff) {
+        itemUltra.status = AuditStatus::Optimized;
+        itemUltra.description = L"Renderer cap (4), 256MB cache ceiling & prefetch disabled.";
+        itemUltra.recommendation = L"Max low-resource configuration active.";
+        report.optimizedCount++;
     } else {
-        itemAuth.status = AuditStatus::NotApplicable;
-        itemAuth.description = L"Not applicable to this browser.";
-        itemAuth.recommendation = L"-";
+        itemUltra.status = AuditStatus::Attention;
+        itemUltra.description = L"Uncapped background processes and unbounded disk cache.";
+        itemUltra.recommendation = L"Apply Ultra Low-Resource policy suite.";
+        report.bloatedCount++;
     }
-    report.items.push_back(itemAuth);
+    report.items.push_back(itemUltra);
 
-    // 6. Shader & GPU Caches
+    // ─────────────────────────────────────────────────────────────────────────
+    // 6. Privacy Sandbox & Ad Topics
+    // ─────────────────────────────────────────────────────────────────────────
+    bool sandboxOff = CheckDualDword(p, L"PrivacySandboxAdTopicsEnabled", 0);
+
+    AuditItem itemSandbox;
+    itemSandbox.id = 6;
+    itemSandbox.category = L"Privacy";
+    itemSandbox.name = L"Privacy Sandbox & Ad Topics";
+    if (sandboxOff) {
+        itemSandbox.status = AuditStatus::Optimized;
+        itemSandbox.description = L"Privacy Sandbox, Topics API & ad telemetry eliminated.";
+        itemSandbox.recommendation = L"Protected.";
+        report.optimizedCount++;
+    } else {
+        itemSandbox.status = AuditStatus::Bloated;
+        itemSandbox.description = L"Browser browsing habits shared with ad-targeting APIs.";
+        itemSandbox.recommendation = L"Eliminate Privacy Sandbox & Topics API.";
+        report.bloatedCount++;
+    }
+    report.items.push_back(itemSandbox);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 7. Commercial & Shopping Bloat
+    // ─────────────────────────────────────────────────────────────────────────
+    bool shopOff = CheckDualDword(p, L"CommercePriceTrackingEnabled", 0) || CheckDualDword(p, L"EdgeShoppingDataEnabled", 0);
+
+    AuditItem itemShop;
+    itemShop.id = 7;
+    itemShop.category = L"Debloat";
+    itemShop.name = L"Shopping & Commercial Bloat";
+    if (shopOff) {
+        itemShop.status = AuditStatus::Optimized;
+        itemShop.description = L"Shopping price tracking, coupon prompts & desktop widgets disabled.";
+        itemShop.recommendation = L"Clean.";
+        report.optimizedCount++;
+    } else {
+        itemShop.status = AuditStatus::Bloated;
+        itemShop.description = L"E-commerce price scanners and shopping coupons active.";
+        itemShop.recommendation = L"Disable shopping & price tracking bloat.";
+        report.bloatedCount++;
+    }
+    report.items.push_back(itemShop);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 8. UI Clutter (Cast, Sharing Hub, Lens)
+    // ─────────────────────────────────────────────────────────────────────────
+    bool clutterOff = CheckDualDword(p, L"ShowCastIconInToolbar", 0) && CheckDualDword(p, L"EnableMediaRouter", 0);
+
+    AuditItem itemClutter;
+    itemClutter.id = 8;
+    itemClutter.category = L"Interface";
+    itemClutter.name = L"UI Clutter & Background Features";
+    if (clutterOff) {
+        itemClutter.status = AuditStatus::Optimized;
+        itemClutter.description = L"Cast icon, Media Router, Google Lens and NTP cards stripped.";
+        itemClutter.recommendation = L"Clean UI.";
+        report.optimizedCount++;
+    } else {
+        itemClutter.status = AuditStatus::Bloated;
+        itemClutter.description = L"Toolbar cluttered with Cast, Sharing Hub and promotional icons.";
+        itemClutter.recommendation = L"Strip toolbar clutter and background services.";
+        report.bloatedCount++;
+    }
+    report.items.push_back(itemClutter);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 9. Shader & GPU Caches Whitespace
+    // ─────────────────────────────────────────────────────────────────────────
     INT64 cacheBytes = 0;
     cacheBytes += CalculateDirectorySize(browser.userDataDir + L"\\Default\\GPUCache");
     cacheBytes += CalculateDirectorySize(browser.userDataDir + L"\\Default\\DawnCache");
@@ -200,49 +281,45 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     report.reclaimableBytes += cacheBytes;
 
     AuditItem itemCache;
-    itemCache.id = 6;
+    itemCache.id = 9;
     itemCache.category = L"Maintenance";
     itemCache.name = L"Shader & GPU Cache Bloat";
-    if (cacheBytes < (5 * 1024 * 1024)) { // Less than 5 MB
+    if (cacheBytes < (5 * 1024 * 1024)) {
         itemCache.status = AuditStatus::Optimized;
-        itemCache.description = L"Shader and GPU caches are clean (" + std::to_wstring(cacheBytes / 1024) + L" KB).";
+        itemCache.description = L"Shader and temporary caches are compact (" + std::to_wstring(cacheBytes / 1024) + L" KB).";
         itemCache.recommendation = L"No action needed.";
         report.optimizedCount++;
     } else {
         itemCache.status = AuditStatus::Bloated;
-        itemCache.description = L"Stale shader and crashpad files (" + std::to_wstring(cacheBytes / (1024 * 1024)) + L" MB).";
-        itemCache.recommendation = L"Purge stale shader and temporary caches.";
+        itemCache.description = L"Accumulated cache and crash dump whitespace (" + std::to_wstring(cacheBytes / (1024 * 1024)) + L" MB).";
+        itemCache.recommendation = L"Run Profile Defragmenter & Deep Cleaner.";
         report.bloatedCount++;
     }
     report.items.push_back(itemCache);
 
-    // 7. Update Lockdown (Chrome only)
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10. Version Freeze & Update Lockdown (All browsers)
+    // ─────────────────────────────────────────────────────────────────────────
+    bool upLocked = CheckDualDword(up, L"UpdateDefault", 0);
+
     AuditItem itemUp;
-    itemUp.id = 7;
+    itemUp.id = 10;
     itemUp.category = L"Security";
     itemUp.name = L"Version Freeze & Update Lockdown";
-    if (browser.id == L"chrome") {
-        DWORD upDef = 1;
-        bool upLocked = ReadRegDword(HKEY_LOCAL_MACHINE, up, L"UpdateDefault", upDef) && (upDef == 0);
-        if (upLocked) {
-            itemUp.status = AuditStatus::Optimized;
-            itemUp.description = L"Auto-updates locked. Frozen at installed version.";
-            itemUp.recommendation = L"No action needed.";
-            report.optimizedCount++;
-        } else {
-            itemUp.status = AuditStatus::Bloated;
-            itemUp.description = L"Auto-updates active; browser will modify version without consent.";
-            itemUp.recommendation = L"Enforce 4-layer permanent update lockdown.";
-            report.bloatedCount++;
-        }
+    if (upLocked) {
+        itemUp.status = AuditStatus::Optimized;
+        itemUp.description = L"Automatic updates frozen. Browser locked at installed version.";
+        itemUp.recommendation = L"Locked.";
+        report.optimizedCount++;
     } else {
-        itemUp.status = AuditStatus::NotApplicable;
-        itemUp.description = L"Update lockdown applies to Google Chrome.";
-        itemUp.recommendation = L"-";
+        itemUp.status = AuditStatus::Bloated;
+        itemUp.description = L"Automatic background updaters active; version can change unprompted.";
+        itemUp.recommendation = L"Enforce 4-layer permanent update lockdown.";
+        report.bloatedCount++;
     }
     report.items.push_back(itemUp);
 
-    // Calculate overall Score
+    // Score calculation
     int totalAssessable = report.optimizedCount + report.bloatedCount;
     if (totalAssessable > 0) {
         report.score = (report.optimizedCount * 100) / totalAssessable;

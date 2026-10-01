@@ -8,6 +8,7 @@
 #include "engine/audit_engine.h"
 #include "engine/tweak_engine.h"
 #include "engine/backup_engine.h"
+#include "engine/update_checker.h"
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -73,33 +74,65 @@ int RunCliMode(int argc, wchar_t** argv) {
 
     std::wstring targetKey = L"chrome";
     bool runAll = false;
+    bool runLowResource = false;
     bool runAudit = false;
     bool runClean = false;
+    bool checkUpdates = false;
+    bool lockUpdates = false;
+    bool unlockUpdates = false;
 
     for (int i = 1; i < argc; ++i) {
         std::wstring arg = argv[i];
         if (arg == L"--all" || arg == L"-a") {
             runAll = true;
+        } else if (arg == L"--low-resource" || arg == L"-l" || arg == L"--low") {
+            runLowResource = true;
         } else if (arg == L"--audit") {
             runAudit = true;
         } else if (arg == L"--clean" || arg == L"-c") {
             runClean = true;
+        } else if (arg == L"--check-updates" || arg == L"-u" || arg == L"--updates") {
+            checkUpdates = true;
+        } else if (arg == L"--lock-updates") {
+            lockUpdates = true;
+        } else if (arg == L"--unlock-updates") {
+            unlockUpdates = true;
         } else if ((arg == L"--browser" || arg == L"-b") && (i + 1 < argc)) {
             targetKey = argv[++i];
         } else if (arg == L"--help" || arg == L"-h" || arg == L"/?") {
             PrintConsole(L"Usage: ChromeDebloater.exe [options]\n\n");
             PrintConsole(L"Options:\n");
-            PrintConsole(L"  --all, -a                 Apply all 10 hardening and optimization tweaks\n");
+            PrintConsole(L"  --all, -a                 Apply all 13 hardening and optimization tweaks\n");
+            PrintConsole(L"  --low-resource, -l        Apply Ultra Low-Resource profile (RAM clamp & renderer limit)\n");
             PrintConsole(L"  --audit                   Run system audit and display hardening score\n");
             PrintConsole(L"  --clean, -c               Perform deep profile SQLite vacuum and cache sweep\n");
+            PrintConsole(L"  --check-updates, -u       Check upstream release channels for Chrome, Brave, and Edge\n");
+            PrintConsole(L"  --lock-updates            Freeze target browser version & block updater services\n");
+            PrintConsole(L"  --unlock-updates          Restore target browser update policies to defaults\n");
             PrintConsole(L"  --browser, -b <name>      Target browser: chrome (default), brave, or edge\n");
             PrintConsole(L"  --help, -h                Display this help screen\n\n");
-            PrintConsole(L"Launch without parameters to open the modern dark graphical interface.\n\n");
+            PrintConsole(L"Launch without parameters to open the modern graphical dark interface.\n\n");
             return 0;
         }
     }
 
     auto browsers = DetectAllBrowsers();
+
+    if (checkUpdates) {
+        PrintConsole(L"[*] Querying upstream release channels for Chrome, Brave, and Edge...\n\n");
+        auto infos = UpdateChecker::CheckAll(browsers);
+        for (const auto& info : infos) {
+            PrintConsole(L"  Browser:   " + info.browserName + L"\n");
+            PrintConsole(L"  Installed: " + (info.isInstalled ? (L"v" + info.installedVersion) : L"Not Detected") + L"\n");
+            PrintConsole(L"  Upstream:  " + (info.latestVersion.empty() ? L"Unreachable / Offline" : (L"v" + info.latestVersion)) + L"\n");
+            PrintConsole(L"  Lockdown:  " + std::wstring(info.isUpdateLocked ? L"Active (Updates Frozen)" : L"Inactive (Updates Allowed)") + L"\n");
+            PrintConsole(L"  Status:    " + info.statusText + L"\n");
+            PrintConsole(L"  ----------------------------------------------------\n");
+        }
+        PrintConsole(L"\n[✓] Upstream release verification complete.\n\n");
+        return 0;
+    }
+
     BrowserTarget* pTarget = nullptr;
     for (auto& b : browsers) {
         if (b.id == targetKey) {
@@ -113,7 +146,30 @@ int RunCliMode(int argc, wchar_t** argv) {
         return 1;
     }
 
-    PrintConsole(L"[*] Target Browser: " + pTarget->name + L"\n");
+    PrintConsole(L"[*] Target Browser: " + pTarget->name + (pTarget->version.empty() ? L"" : (L" (v" + pTarget->version + L")")) + L"\n");
+
+    if (lockUpdates) {
+        PrintConsole(L"[*] Enforcing 4-layer update lockdown for " + pTarget->name + L"...\n");
+        std::vector<int> ids = { 13 };
+        TweakEngine::ExecuteTweaks(*pTarget, ids,
+            [](const std::wstring& msg, const std::wstring& lvl) {
+                PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
+            },
+            [](int, const std::wstring&) {}
+        );
+        PrintConsole(L"[✓] " + pTarget->name + L" frozen at current installed version.\n\n");
+        return 0;
+    }
+
+    if (unlockUpdates) {
+        PrintConsole(L"[*] Restoring update policies for " + pTarget->name + L"...\n");
+        TweakEngine::DeleteRegValue(HKEY_LOCAL_MACHINE, pTarget->updateKey, L"UpdateDefault");
+        TweakEngine::DeleteRegValue(HKEY_CURRENT_USER, pTarget->updateKey, L"UpdateDefault");
+        TweakEngine::DeleteRegValue(HKEY_LOCAL_MACHINE, pTarget->updateKey, L"AutoUpdateCheckPeriodMinutes");
+        TweakEngine::DeleteRegValue(HKEY_CURRENT_USER, pTarget->updateKey, L"AutoUpdateCheckPeriodMinutes");
+        PrintConsole(L"[✓] " + pTarget->name + L" updater policies restored.\n\n");
+        return 0;
+    }
 
     if (runAudit) {
         PrintConsole(L"[*] Running system audit scan...\n");
@@ -137,13 +193,33 @@ int RunCliMode(int argc, wchar_t** argv) {
         return 0;
     }
 
+    if (runLowResource) {
+        PrintConsole(L"[*] Applying Ultra Low-Resource Profile...\n");
+        auto allTweaks = TweakEngine::GetAllTweaks();
+        TweakEngine::ApplyPreset(allTweaks, TweakPreset::UltraLowResource);
+        std::vector<int> ids;
+        for (const auto& tw : allTweaks) {
+            if (tw.enabled) ids.push_back(tw.id);
+        }
+
+        bool ok = TweakEngine::ExecuteTweaks(
+            *pTarget, ids,
+            [](const std::wstring& msg, const std::wstring& lvl) {
+                PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
+            },
+            [](int, const std::wstring&) {}
+        );
+        PrintConsole(L"\n[✓] Ultra Low-Resource optimization complete with status: " + std::wstring(ok ? L"SUCCESS" : L"WARNINGS") + L"\n\n");
+        return ok ? 0 : 1;
+    }
+
     if (runAll) {
         PrintConsole(L"[*] Creating automated safety restore point...\n");
         std::wstring bPath;
         BackupEngine::CreateSnapshot(*pTarget, bPath);
         PrintConsole(L"[✓] Snapshot saved to: " + bPath + L"\n");
 
-        PrintConsole(L"[*] Enforcing 10 hardening and debloat modules...\n");
+        PrintConsole(L"[*] Enforcing all 13 hardening and debloat modules...\n");
         auto allTweaks = TweakEngine::GetAllTweaks();
         std::vector<int> ids;
         for (const auto& tw : allTweaks) ids.push_back(tw.id);
@@ -153,7 +229,7 @@ int RunCliMode(int argc, wchar_t** argv) {
             [](const std::wstring& msg, const std::wstring& lvl) {
                 PrintConsole(L"  [" + lvl + L"] " + msg + L"\n");
             },
-            [](int pct, const std::wstring& act) {}
+            [](int, const std::wstring&) {}
         );
 
         PrintConsole(L"\n[✓] Optimization sweep completed with status: " + std::wstring(ok ? L"SUCCESS" : L"WARNINGS") + L"\n\n");
@@ -164,15 +240,18 @@ int RunCliMode(int argc, wchar_t** argv) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-    // 1. Check for CLI arguments first
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (argc > 1) {
         for (int i = 1; i < argc; ++i) {
             std::wstring arg = argv[i];
-            if (arg == L"--all" || arg == L"-a" || arg == L"--audit" || arg == L"--clean" || arg == L"-c" || arg == L"--help" || arg == L"-h" || arg == L"/?") {
-                // If modifying system, ensure elevation
-                if ((arg == L"--all" || arg == L"-a" || arg == L"--clean" || arg == L"-c") && !IsProcessElevated()) {
+            if (arg == L"--all" || arg == L"-a" || arg == L"--low-resource" || arg == L"-l" || arg == L"--low" ||
+                arg == L"--audit" || arg == L"--clean" || arg == L"-c" || arg == L"--check-updates" || arg == L"-u" ||
+                arg == L"--updates" || arg == L"--lock-updates" || arg == L"--unlock-updates" ||
+                arg == L"--help" || arg == L"-h" || arg == L"/?") {
+                
+                if ((arg == L"--all" || arg == L"-a" || arg == L"--low-resource" || arg == L"-l" ||
+                     arg == L"--clean" || arg == L"-c" || arg == L"--lock-updates" || arg == L"--unlock-updates") && !IsProcessElevated()) {
                     if (RelaunchAsAdmin(pCmdLine)) {
                         LocalFree(argv);
                         return 0;
@@ -186,7 +265,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     }
     if (argv) LocalFree(argv);
 
-    // 2. Ensure process is elevated as Administrator for GUI mode
     if (!IsProcessElevated()) {
         if (RelaunchAsAdmin(pCmdLine)) {
             return 0;
@@ -201,13 +279,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         }
     }
 
-    // 3. Launch Modern Dark GUI
     if (!AppWindow::InitializeAndShow(hInstance, nCmdShow)) {
         MessageBoxW(NULL, L"Failed to initialize modern user interface.", L"Error", MB_ICONERROR | MB_OK);
         return 1;
     }
 
-    // 4. Message Loop
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);

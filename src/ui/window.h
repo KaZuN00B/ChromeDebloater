@@ -8,11 +8,13 @@
 #include "../engine/audit_engine.h"
 #include "../engine/tweak_engine.h"
 #include "../engine/backup_engine.h"
+#include "../engine/update_checker.h"
 
 #define WM_APP_ENGINE_LOG      (WM_APP + 10)
 #define WM_APP_ENGINE_PROG     (WM_APP + 11)
 #define WM_APP_ENGINE_DONE     (WM_APP + 12)
 #define WM_APP_AUDIT_DONE      (WM_APP + 13)
+#define WM_APP_UPDATES_DONE    (WM_APP + 14)
 
 struct LogMessage {
     std::wstring timestamp;
@@ -45,10 +47,12 @@ private:
     std::vector<TweakItem> m_tweaks;
     AuditReport m_auditReport;
     std::vector<BackupSnapshot> m_snapshots;
+    std::vector<BrowserUpdateInfo> m_updateInfos;
     std::vector<LogMessage> m_logs;
     int m_progressPercent = 0;
     std::wstring m_progressAction = L"Ready";
     bool m_isBusy = false;
+    bool m_isCheckingUpdates = false;
 
     // Interaction & Layout
     POINT m_mousePos = { 0, 0 };
@@ -66,11 +70,14 @@ private:
     void RenderDashboard(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
     void RenderTweaks(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
     void RenderCleaner(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
+    void RenderUpdates(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
     void RenderBackups(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
     void RenderLogs(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
 
     // Actions
     void RunAuditAsync();
+    void RunCheckUpdatesAsync();
+    void RunToggleUpdateLockAsync(int browserIdx, bool lock);
     void RunApplyTweaksAsync();
     void RunDeepCleanAsync();
     void RunCreateBackupAsync();

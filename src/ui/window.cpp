@@ -16,7 +16,7 @@ bool AppWindow::InitializeAndShow(HINSTANCE hInstance, int nCmdShow) {
     wc.hInstance = hInstance;
     wc.lpszClassName = L"ChromeDebloaterModernClass";
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = NULL; // We paint entirely in WM_PAINT
+    wc.hbrBackground = NULL;
     wc.hIcon = LoadIcon(NULL, IDI_SHIELD);
     wc.hIconSm = LoadIcon(NULL, IDI_SHIELD);
 
@@ -40,7 +40,7 @@ bool AppWindow::InitializeAndShow(HINSTANCE hInstance, int nCmdShow) {
 
     if (!hwnd) return false;
 
-    // Windows 10/11 Immersive Dark Mode for Title Bar
+    // Dark Mode Title Bar
     BOOL darkMode = TRUE;
     DwmSetWindowAttribute(hwnd, 20, &darkMode, sizeof(darkMode));
     DwmSetWindowAttribute(hwnd, 19, &darkMode, sizeof(darkMode));
@@ -63,7 +63,7 @@ LRESULT CALLBACK AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         }
 
         case WM_ERASEBKGND:
-            return 1; // Prevent flicker; handled in WM_PAINT
+            return 1;
 
         case WM_PAINT: {
             PAINTSTRUCT ps;
@@ -77,26 +77,21 @@ LRESULT CALLBACK AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
         case WM_MOUSEMOVE: {
             if (pThis) {
-                int x = LOWORD(lParam);
-                int y = HIWORD(lParam);
-                pThis->OnMouseMove(x, y);
+                pThis->OnMouseMove(LOWORD(lParam), HIWORD(lParam));
             }
             return 0;
         }
 
         case WM_LBUTTONDOWN: {
             if (pThis) {
-                int x = LOWORD(lParam);
-                int y = HIWORD(lParam);
-                pThis->OnLButtonDown(x, y);
+                pThis->OnLButtonDown(LOWORD(lParam), HIWORD(lParam));
             }
             return 0;
         }
 
         case WM_MOUSEWHEEL: {
             if (pThis) {
-                short delta = GET_WHEEL_DELTA_WPARAM(wParam);
-                pThis->OnMouseWheel(delta);
+                pThis->OnMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
             }
             return 0;
         }
@@ -132,6 +127,7 @@ LRESULT CALLBACK AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             if (pThis) {
                 pThis->m_isBusy = false;
                 pThis->RunAuditAsync();
+                pThis->RunCheckUpdatesAsync();
                 InvalidateRect(hwnd, NULL, FALSE);
             }
             return 0;
@@ -143,6 +139,19 @@ LRESULT CALLBACK AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 if (pRep) {
                     pThis->m_auditReport = *pRep;
                     delete pRep;
+                    InvalidateRect(hwnd, NULL, FALSE);
+                }
+            }
+            return 0;
+        }
+
+        case WM_APP_UPDATES_DONE: {
+            if (pThis) {
+                std::vector<BrowserUpdateInfo>* pInfos = (std::vector<BrowserUpdateInfo>*)lParam;
+                if (pInfos) {
+                    pThis->m_updateInfos = *pInfos;
+                    delete pInfos;
+                    pThis->m_isCheckingUpdates = false;
                     InvalidateRect(hwnd, NULL, FALSE);
                 }
             }
@@ -166,7 +175,6 @@ void AppWindow::OnInit(HWND hwnd) {
     GdiplusStartupInput gdiInput;
     GdiplusStartup(&m_gdiToken, &gdiInput, NULL);
 
-    // Initialize Fonts (Segoe UI)
     m_fTitle = new Font(L"Segoe UI", 16.0f, FontStyleBold, UnitPixel);
     m_fSubtitle = new Font(L"Segoe UI", 12.0f, FontStyleRegular, UnitPixel);
     m_fNormal = new Font(L"Segoe UI", 13.0f, FontStyleRegular, UnitPixel);
@@ -175,16 +183,15 @@ void AppWindow::OnInit(HWND hwnd) {
     m_fScore = new Font(L"Segoe UI", 26.0f, FontStyleBold, UnitPixel);
     m_fConsole = new Font(L"Consolas", 12.0f, FontStyleRegular, UnitPixel);
 
-    // Detect Browsers & Load Tweaks
     m_browsers = DetectAllBrowsers();
     m_tweaks = TweakEngine::GetAllTweaks();
     m_snapshots = BackupEngine::ListSnapshots();
 
-    AddLog(L"ChromeDebloater Pro Native v3.1 started.", L"INFO");
-    AddLog(L"Verified Registry Write & Policy Engine Ready.", L"INFO");
+    AddLog(L"ChromeDebloater Pro Native v3.2 started.", L"INFO");
+    AddLog(L"Universal Chromium Compatibility Engine Loaded (Chrome, Brave, Edge).", L"INFO");
 
-    // Perform Initial System Audit
     RunAuditAsync();
+    RunCheckUpdatesAsync();
 }
 
 void AppWindow::OnDestroy() {
@@ -227,7 +234,6 @@ void AppWindow::OnPaint(HDC hdc) {
     int width = clientRc.right - clientRc.left;
     int height = clientRc.bottom - clientRc.top;
 
-    // Double buffering with GDI+
     HDC memDC = CreateCompatibleDC(hdc);
     HBITMAP memBmp = CreateCompatibleBitmap(hdc, width, height);
     HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
@@ -236,28 +242,24 @@ void AppWindow::OnPaint(HDC hdc) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
-    // Background
     SolidBrush bgBrush(Theme::BgDark);
     g.FillRectangle(&bgBrush, 0, 0, width, height);
 
-    // Layout Dimensions
     float sidebarW = 240.0f;
     RectF sidebarRect(0, 0, sidebarW, (float)height);
     RectF contentRect(sidebarW, 0, (float)width - sidebarW, (float)height);
 
-    // Render Sidebar
     RenderSidebar(g, sidebarRect);
 
-    // Render Active Content Page
     switch (m_currentPage) {
         case NavPage::Dashboard: RenderDashboard(g, contentRect); break;
         case NavPage::Tweaks:    RenderTweaks(g, contentRect); break;
         case NavPage::Cleaner:   RenderCleaner(g, contentRect); break;
+        case NavPage::Updates:   RenderUpdates(g, contentRect); break;
         case NavPage::Backups:   RenderBackups(g, contentRect); break;
         case NavPage::Logs:      RenderLogs(g, contentRect); break;
     }
 
-    // Blit to screen
     BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
 
     SelectObject(memDC, oldBmp);
@@ -266,33 +268,29 @@ void AppWindow::OnPaint(HDC hdc) {
 }
 
 void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
-    // Sidebar background
     SolidBrush sbBrush(Theme::BgSidebar);
     g.FillRectangle(&sbBrush, rect);
 
-    // Divider Line
     Pen divPen(Theme::BorderSubtle, 1.0f);
     g.DrawLine(&divPen, rect.Width, 0.0f, rect.Width, rect.Height);
 
-    // 1. App Header
+    // Header
     SolidBrush titleBrush(Theme::TextPrimary);
     g.DrawString(L"🛡 ChromeDebloater", -1, m_fTitle, PointF(20.0f, 20.0f), &titleBrush);
 
     SolidBrush verBrush(Theme::TextMuted);
-    g.DrawString(L"v3.1 Pro · Native C++ Engine", -1, m_fSmall, PointF(22.0f, 44.0f), &verBrush);
+    g.DrawString(L"v3.2 Pro · Multi-Browser Hardener", -1, m_fSmall, PointF(22.0f, 44.0f), &verBrush);
 
-    // Admin Status Badge
     RectF adminBadge(20.0f, 68.0f, 130.0f, 22.0f);
     RenderUtils::DrawBadge(g, adminBadge, L"●  ADMINISTRATOR", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
 
-    // 2. Browser Target Selector Card
-    RectF browCard(16.0f, 106.0f, rect.Width - 32.0f, 78.0f);
+    // Browser Target Selector
+    RectF browCard(16.0f, 104.0f, rect.Width - 32.0f, 78.0f);
     RenderUtils::DrawCard(g, browCard, Theme::BgCard, Theme::BorderSubtle, 6.0f);
 
     SolidBrush lblBrush(Theme::TextMuted);
     g.DrawString(L"TARGET BROWSER", -1, m_fSmall, PointF(browCard.X + 12.0f, browCard.Y + 8.0f), &lblBrush);
 
-    // 3 Browser pills
     float btnW = (browCard.Width - 24.0f) / 3.0f;
     const wchar_t* bNames[] = { L"Chrome", L"Brave", L"Edge" };
     for (int i = 0; i < 3; ++i) {
@@ -311,18 +309,19 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
         g.DrawString(bNames[i], -1, m_fSmall, bPill, &sf, &pillTxtBrush);
     }
 
-    // 3. Navigation Items
-    float navY = 206.0f;
-    float navH = 44.0f;
+    // Navigation Items (6 pages)
+    float navY = 196.0f;
+    float navH = 38.0f;
     const wchar_t* navLabels[] = {
         L"📊  Dashboard",
         L"⚡  Optimizations",
         L"🧹  Deep Cleaner",
+        L"🌐  Browser Updates",
         L"🔄  Backups & Restore",
         L"📜  Activity Console"
     };
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         RectF navItem(16.0f, navY + i * (navH + 6.0f), rect.Width - 32.0f, navH);
         bool isActive = ((int)m_currentPage == i);
 
@@ -330,7 +329,7 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
             SolidBrush activeBrush(Color(255, 26, 35, 50));
             RenderUtils::FillRoundedRect(g, activeBrush, navItem, 6.0f);
             SolidBrush barBrush(Theme::AccentBlue);
-            g.FillRectangle(&barBrush, navItem.X, navItem.Y + 10.0f, 3.0f, navItem.Height - 20.0f);
+            g.FillRectangle(&barBrush, navItem.X, navItem.Y + 8.0f, 3.0f, navItem.Height - 16.0f);
         }
 
         SolidBrush itemTxt(isActive ? Theme::TextPrimary : Theme::TextSecondary);
@@ -340,20 +339,20 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
         g.DrawString(navLabels[i], -1, isActive ? m_fBold : m_fNormal, textRc, &sf, &itemTxt);
     }
 
-    // 4. Bottom System Status Card
-    RectF statusCard(16.0f, rect.Height - 96.0f, rect.Width - 32.0f, 80.0f);
+    // Status Card at Bottom
+    RectF statusCard(16.0f, rect.Height - 88.0f, rect.Width - 32.0f, 74.0f);
     RenderUtils::DrawCard(g, statusCard, Theme::BgCard, Theme::BorderSubtle, 6.0f);
 
     SolidBrush statTitle(Theme::TextPrimary);
-    g.DrawString(L"System Health", -1, m_fBold, PointF(statusCard.X + 12.0f, statusCard.Y + 10.0f), &statTitle);
+    g.DrawString(L"System Health", -1, m_fBold, PointF(statusCard.X + 12.0f, statusCard.Y + 8.0f), &statTitle);
 
-    std::wstring ramSaved = L"Disk Whitespace: " + std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB";
+    std::wstring ramSaved = L"Whitespace: " + std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB";
     SolidBrush statDesc(Theme::TextMuted);
-    g.DrawString(ramSaved.c_str(), -1, m_fSmall, PointF(statusCard.X + 12.0f, statusCard.Y + 32.0f), &statDesc);
+    g.DrawString(ramSaved.c_str(), -1, m_fSmall, PointF(statusCard.X + 12.0f, statusCard.Y + 28.0f), &statDesc);
 
     std::wstring statusStr = m_isBusy ? (L"● " + m_progressAction) : L"● Engine Idle";
     SolidBrush statInd(m_isBusy ? Theme::WarningOrange : Theme::SuccessGreen);
-    g.DrawString(statusStr.c_str(), -1, m_fSmall, PointF(statusCard.X + 12.0f, statusCard.Y + 52.0f), &statInd);
+    g.DrawString(statusStr.c_str(), -1, m_fSmall, PointF(statusCard.X + 12.0f, statusCard.Y + 46.0f), &statInd);
 }
 
 void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
@@ -361,7 +360,7 @@ void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
     float startY = 24.0f;
     float contentW = rect.Width - 56.0f;
 
-    // ── Progress Bar overlay at top when busy ──────────────────────────────
+    // Progress bar overlay when busy
     if (m_isBusy) {
         RectF pBarBg(rect.X + 8.0f, 4.0f, rect.Width - 16.0f, 10.0f);
         SolidBrush pbBg(Color(255, 20, 28, 42));
@@ -372,91 +371,85 @@ void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
             SolidBrush pbFill(Theme::AccentBlue);
             RenderUtils::FillRoundedRect(g, pbFill, pBarFill, 3.0f);
         }
-        // Status text
         SolidBrush actBrush(Theme::AccentBlue);
         g.DrawString((L"⚡ " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%)").c_str(),
             -1, m_fSmall, PointF(startX, 18.0f), &actBrush);
         startY = 40.0f;
     }
-    // ──────────────────────────────────────────────────────────────────────
 
-    // Header
     SolidBrush titleBrush(Theme::TextPrimary);
     g.DrawString(L"System & Browser Health Dashboard", -1, m_fTitle, PointF(startX, startY), &titleBrush);
 
     std::wstring sub = L"Active Profile: " + m_browsers[m_selectedBrowserIdx].name;
     if (!m_browsers[m_selectedBrowserIdx].version.empty()) {
-        sub += L" (" + m_browsers[m_selectedBrowserIdx].version + L")";
+        sub += L" (v" + m_browsers[m_selectedBrowserIdx].version + L")";
     }
     SolidBrush subBrush(Theme::TextSecondary);
     g.DrawString(sub.c_str(), -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
-    // 1. Large Health Score Card
-    RectF gaugeRect(startX, startY + 60.0f, contentW, 100.0f);
+    // 1. Health Score Gauge
+    RectF gaugeRect(startX, startY + 56.0f, contentW, 96.0f);
     RenderUtils::DrawScoreGauge(g, gaugeRect, m_auditReport.score, m_fBold, m_fScore);
 
     // 2. Three Metric Cards Row
-    float cardY = startY + 172.0f;
+    float cardY = startY + 162.0f;
     float cardW = (contentW - 24.0f) / 3.0f;
-    float cardH = 80.0f;
+    float cardH = 76.0f;
 
-    // Metric 1: Optimized Policies
+    // Card 1
     RectF m1(startX, cardY, cardW, cardH);
     RenderUtils::DrawCard(g, m1, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"PROTECTED POLICIES", -1, m_fSmall, PointF(m1.X + 14.0f, m1.Y + 12.0f), &subBrush);
-    std::wstring polStr = std::to_wstring(m_auditReport.optimizedCount) + L" Subsystems";
-    g.DrawString(polStr.c_str(), -1, m_fBold, PointF(m1.X + 14.0f, m1.Y + 34.0f), &titleBrush);
+    g.DrawString(L"HARDENED POLICIES", -1, m_fSmall, PointF(m1.X + 14.0f, m1.Y + 10.0f), &subBrush);
+    std::wstring polStr = std::to_wstring(m_auditReport.optimizedCount) + L" Protected";
+    g.DrawString(polStr.c_str(), -1, m_fBold, PointF(m1.X + 14.0f, m1.Y + 32.0f), &titleBrush);
 
-    // Metric 2: AI Status
+    // Card 2
     RectF m2(startX + cardW + 12.0f, cardY, cardW, cardH);
     RenderUtils::DrawCard(g, m2, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"AI & GEMINI INTEGRATION", -1, m_fSmall, PointF(m2.X + 14.0f, m2.Y + 12.0f), &subBrush);
+    g.DrawString(L"AI & GEMINI INTEGRATION", -1, m_fSmall, PointF(m2.X + 14.0f, m2.Y + 10.0f), &subBrush);
     SolidBrush aiStBrush(m_auditReport.score >= 80 ? Theme::SuccessGreen : Theme::WarningOrange);
-    g.DrawString(m_auditReport.score >= 80 ? L"0 Active (Eliminated)" : L"Action Needed", -1, m_fBold, PointF(m2.X + 14.0f, m2.Y + 34.0f), &aiStBrush);
+    g.DrawString(m_auditReport.score >= 80 ? L"Eliminated (0 Active)" : L"Action Needed", -1, m_fBold, PointF(m2.X + 14.0f, m2.Y + 32.0f), &aiStBrush);
 
-    // Metric 3: Reclaimable Cache
+    // Card 3
     RectF m3(startX + (cardW + 12.0f) * 2.0f, cardY, cardW, cardH);
     RenderUtils::DrawCard(g, m3, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"RECLAIMABLE SPACE", -1, m_fSmall, PointF(m3.X + 14.0f, m3.Y + 12.0f), &subBrush);
-    std::wstring spaceStr = std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB Cache & Shaders";
-    g.DrawString(spaceStr.c_str(), -1, m_fBold, PointF(m3.X + 14.0f, m3.Y + 34.0f), &titleBrush);
+    g.DrawString(L"RECLAIMABLE CACHE", -1, m_fSmall, PointF(m3.X + 14.0f, m3.Y + 10.0f), &subBrush);
+    std::wstring spaceStr = std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB Cleanup Whitespace";
+    g.DrawString(spaceStr.c_str(), -1, m_fBold, PointF(m3.X + 14.0f, m3.Y + 32.0f), &titleBrush);
 
-    // 3. One-Click Quick Actions
-    float actY = startY + 268.0f;
-    RectF btn1(startX, actY, 260.0f, 44.0f);
-    RenderUtils::DrawGradientButton(g, btn1, L"🚀  Apply Maximum Optimization", false, false, m_fBold, !m_isBusy);
+    // 3. Quick Action Buttons
+    float actY = startY + 250.0f;
+    RectF btn1(startX, actY, 240.0f, 42.0f);
+    RenderUtils::DrawGradientButton(g, btn1, L"🚀  Apply Maximum Preset", false, false, m_fBold, !m_isBusy);
 
-    RectF btn2(startX + 276.0f, actY, 200.0f, 44.0f);
-    RenderUtils::DrawCard(g, btn2, Theme::BgCard, Theme::BorderSubtle, 8.0f);
+    RectF btn2(startX + 252.0f, actY, 240.0f, 42.0f);
+    RenderUtils::DrawGradientButton(g, btn2, L"🧊  Apply Ultra-Low RAM", false, false, m_fBold, !m_isBusy);
+
+    RectF btn3(startX + 504.0f, actY, 180.0f, 42.0f);
+    RenderUtils::DrawCard(g, btn3, Theme::BgCard, Theme::BorderSubtle, 8.0f);
     StringFormat sfCenter;
     sfCenter.SetAlignment(StringAlignmentCenter);
     sfCenter.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"🔍  Re-Scan System", -1, m_fBold, btn2, &sfCenter, &titleBrush);
-
-    RectF btn3(startX + 492.0f, actY, 200.0f, 44.0f);
-    RenderUtils::DrawCard(g, btn3, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"💾  Create Snapshot", -1, m_fBold, btn3, &sfCenter, &titleBrush);
+    g.DrawString(L"🌐  Check Updates", -1, m_fBold, btn3, &sfCenter, &titleBrush);
 
     // 4. Audit Checklist Table
-    float listY = startY + 332.0f;
-    g.DrawString(L"AUDIT & SECURITY FINDINGS", -1, m_fSmall, PointF(startX, listY), &subBrush);
+    float listY = startY + 308.0f;
+    g.DrawString(L"BROWSER AUDIT & HARDENING FINDINGS", -1, m_fSmall, PointF(startX, listY), &subBrush);
 
-    float itemY = listY + 22.0f;
+    float itemY = listY + 20.0f;
     for (size_t i = 0; i < m_auditReport.items.size() && i < 5; ++i) {
-        RectF rowRect(startX, itemY + i * 56.0f, contentW, 50.0f);
+        RectF rowRect(startX, itemY + i * 54.0f, contentW, 48.0f);
         RenderUtils::DrawCard(g, rowRect, Theme::BgCard, Theme::BorderSubtle, 6.0f);
 
-        // Icon & Title
         bool isOpt = (m_auditReport.items[i].status == AuditStatus::Optimized);
         const wchar_t* icon = isOpt ? L"✓" : L"!";
         SolidBrush iconBrush(isOpt ? Theme::SuccessGreen : Theme::WarningOrange);
-        g.DrawString(icon, -1, m_fBold, PointF(rowRect.X + 16.0f, rowRect.Y + 14.0f), &iconBrush);
+        g.DrawString(icon, -1, m_fBold, PointF(rowRect.X + 14.0f, rowRect.Y + 12.0f), &iconBrush);
 
-        g.DrawString(m_auditReport.items[i].name.c_str(), -1, m_fBold, PointF(rowRect.X + 40.0f, rowRect.Y + 8.0f), &titleBrush);
-        g.DrawString(m_auditReport.items[i].description.c_str(), -1, m_fSmall, PointF(rowRect.X + 40.0f, rowRect.Y + 28.0f), &subBrush);
+        g.DrawString(m_auditReport.items[i].name.c_str(), -1, m_fBold, PointF(rowRect.X + 36.0f, rowRect.Y + 6.0f), &titleBrush);
+        g.DrawString(m_auditReport.items[i].description.c_str(), -1, m_fSmall, PointF(rowRect.X + 36.0f, rowRect.Y + 26.0f), &subBrush);
 
-        // Status badge
-        RectF badgeRc(rowRect.X + rowRect.Width - 130.0f, rowRect.Y + 14.0f, 116.0f, 22.0f);
+        RectF badgeRc(rowRect.X + rowRect.Width - 130.0f, rowRect.Y + 12.0f, 116.0f, 22.0f);
         RenderUtils::DrawBadge(
             g, badgeRc,
             isOpt ? L"OPTIMIZED" : L"ATTENTION",
@@ -476,11 +469,10 @@ void AppWindow::RenderTweaks(Graphics& g, const RectF& rect) {
     g.DrawString(L"Hardening & Optimization Modules", -1, m_fTitle, PointF(startX, startY), &titleBrush);
 
     SolidBrush subBrush(Theme::TextSecondary);
-    g.DrawString(L"Configure granular enterprise policies and performance flags", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+    g.DrawString(L"Granular enterprise policies, memory clamps & performance flags", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
-    // ── Progress Bar when busy ─────────────────────────────────────────────
     if (m_isBusy) {
-        float pbY = startY + 50.0f;
+        float pbY = startY + 48.0f;
         RectF pBarBg(startX, pbY, contentW, 8.0f);
         SolidBrush pbBg(Color(255, 20, 28, 42));
         RenderUtils::FillRoundedRect(g, pbBg, pBarBg, 4.0f);
@@ -491,57 +483,58 @@ void AppWindow::RenderTweaks(Graphics& g, const RectF& rect) {
             RenderUtils::FillRoundedRect(g, pbFill, pBarFill, 3.0f);
         }
         SolidBrush actBrush(Theme::AccentBlue);
-        std::wstring statusMsg = L"⚡ " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%) — Check Activity Console for details";
-        g.DrawString(statusMsg.c_str(), -1, m_fSmall, PointF(startX, pbY + 14.0f), &actBrush);
-        startY = pbY + 36.0f;
+        std::wstring statusMsg = L"⚡ " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%)";
+        g.DrawString(statusMsg.c_str(), -1, m_fSmall, PointF(startX, pbY + 12.0f), &actBrush);
+        startY = pbY + 30.0f;
     }
-    // ──────────────────────────────────────────────────────────────────────
 
-    // Presets Row
-    float presY = startY + 56.0f;
-    RectF p1(startX, presY, 150.0f, 32.0f);
-    RenderUtils::DrawCard(g, p1, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
+    // 4 Presets Row
+    float presY = startY + 52.0f;
     StringFormat sfCenter;
     sfCenter.SetAlignment(StringAlignmentCenter);
     sfCenter.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"⚡ Maximum Preset", -1, m_fSmall, p1, &sfCenter, &titleBrush);
 
-    RectF p2(startX + 160.0f, presY, 150.0f, 32.0f);
+    RectF p1(startX, presY, 140.0f, 32.0f);
+    RenderUtils::DrawCard(g, p1, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
+    g.DrawString(L"⚡ Maximum", -1, m_fSmall, p1, &sfCenter, &titleBrush);
+
+    RectF p2(startX + 148.0f, presY, 140.0f, 32.0f);
     RenderUtils::DrawCard(g, p2, Theme::BgCard, Theme::BorderSubtle, 4.0f);
-    g.DrawString(L"⚖ Balanced Preset", -1, m_fSmall, p2, &sfCenter, &subBrush);
+    g.DrawString(L"⚖ Balanced", -1, m_fSmall, p2, &sfCenter, &subBrush);
 
-    RectF p3(startX + 320.0f, presY, 150.0f, 32.0f);
+    RectF p3(startX + 296.0f, presY, 140.0f, 32.0f);
     RenderUtils::DrawCard(g, p3, Theme::BgCard, Theme::BorderSubtle, 4.0f);
     g.DrawString(L"🔒 Privacy Only", -1, m_fSmall, p3, &sfCenter, &subBrush);
 
+    RectF p4(startX + 444.0f, presY, 170.0f, 32.0f);
+    RenderUtils::DrawCard(g, p4, Theme::BgCard, Theme::BorderSubtle, 4.0f);
+    g.DrawString(L"🧊 Ultra-Low Resource", -1, m_fSmall, p4, &sfCenter, &subBrush);
+
     // Tweak Cards
-    float cardY = presY + 44.0f - (float)m_tweakScrollY;
+    float cardY = presY + 42.0f - (float)m_tweakScrollY;
     for (size_t i = 0; i < m_tweaks.size(); ++i) {
         if (cardY + 68.0f < 0 || cardY > rect.Height) {
-            cardY += 76.0f;
+            cardY += 74.0f;
             continue;
         }
 
-        RectF tc(startX, cardY, contentW, 68.0f);
+        RectF tc(startX, cardY, contentW, 66.0f);
         RenderUtils::DrawCard(g, tc, Theme::BgCard, Theme::BorderSubtle, 8.0f);
 
-        // Title & Description
-        g.DrawString(m_tweaks[i].title.c_str(), -1, m_fBold, PointF(tc.X + 16.0f, tc.Y + 12.0f), &titleBrush);
-        g.DrawString(m_tweaks[i].description.c_str(), -1, m_fSmall, PointF(tc.X + 16.0f, tc.Y + 36.0f), &subBrush);
+        g.DrawString(m_tweaks[i].title.c_str(), -1, m_fBold, PointF(tc.X + 16.0f, tc.Y + 11.0f), &titleBrush);
+        g.DrawString(m_tweaks[i].description.c_str(), -1, m_fSmall, PointF(tc.X + 16.0f, tc.Y + 34.0f), &subBrush);
 
-        // Impact Badge
-        RectF tagRc(tc.X + tc.Width - 160.0f, tc.Y + 22.0f, 96.0f, 22.0f);
+        RectF tagRc(tc.X + tc.Width - 170.0f, tc.Y + 20.0f, 106.0f, 22.0f);
         RenderUtils::DrawBadge(g, tagRc, m_tweaks[i].impactTag, Theme::BgCardHover, Theme::TextSecondary, m_fSmall);
 
-        // Pill Toggle Switch
-        RectF togRc(tc.X + tc.Width - 52.0f, tc.Y + 22.0f, 40.0f, 22.0f);
+        RectF togRc(tc.X + tc.Width - 52.0f, tc.Y + 20.0f, 40.0f, 22.0f);
         RenderUtils::DrawToggle(g, togRc, m_tweaks[i].enabled, false);
 
-        cardY += 76.0f;
+        cardY += 74.0f;
     }
 
-    // Floating Bottom Apply Button
-    RectF applyBtn(startX, rect.Height - 64.0f, contentW, 44.0f);
+    // Apply Button
+    RectF applyBtn(startX, rect.Height - 60.0f, contentW, 44.0f);
     RenderUtils::DrawGradientButton(g, applyBtn, L"⚡  APPLY SELECTED OPTIMIZATIONS", false, false, m_fBold, !m_isBusy);
 }
 
@@ -556,7 +549,7 @@ void AppWindow::RenderCleaner(Graphics& g, const RectF& rect) {
     SolidBrush subBrush(Theme::TextSecondary);
     g.DrawString(L"Clean temporary shaders, defragment SQLite history, and flush DNS cache", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
-    float cy = startY + 70.0f;
+    float cy = startY + 68.0f;
     const wchar_t* cleanItems[][2] = {
         { L"SQLite Database Vacuum & Reindex", L"Compacts History, Favicons, and Shortcuts databases via winsqlite3.dll" },
         { L"Purge GPU & Shader Caches", L"Cleans stale DawnCache, GrShaderCache, and GPUCache folders" },
@@ -565,7 +558,7 @@ void AppWindow::RenderCleaner(Graphics& g, const RectF& rect) {
     };
 
     for (int i = 0; i < 4; ++i) {
-        RectF cRect(startX, cy + i * 80.0f, contentW, 68.0f);
+        RectF cRect(startX, cy + i * 78.0f, contentW, 66.0f);
         RenderUtils::DrawCard(g, cRect, Theme::BgCard, Theme::BorderSubtle, 8.0f);
 
         g.DrawString(cleanItems[i][0], -1, m_fBold, PointF(cRect.X + 16.0f, cRect.Y + 12.0f), &titleBrush);
@@ -575,8 +568,88 @@ void AppWindow::RenderCleaner(Graphics& g, const RectF& rect) {
         RenderUtils::DrawBadge(g, rdyBadge, L"READY", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
     }
 
-    RectF runCleanBtn(startX, cy + 340.0f, 280.0f, 48.0f);
+    RectF runCleanBtn(startX, cy + 330.0f, 280.0f, 46.0f);
     RenderUtils::DrawGradientButton(g, runCleanBtn, L"🧹  RUN DEEP CLEAN NOW", false, false, m_fBold, !m_isBusy);
+}
+
+void AppWindow::RenderUpdates(Graphics& g, const RectF& rect) {
+    float startX = rect.X + 28.0f;
+    float startY = 24.0f;
+    float contentW = rect.Width - 56.0f;
+
+    SolidBrush titleBrush(Theme::TextPrimary);
+    g.DrawString(L"Multi-Browser Update & Version Center", -1, m_fTitle, PointF(startX, startY), &titleBrush);
+
+    SolidBrush subBrush(Theme::TextSecondary);
+    g.DrawString(L"Live upstream release checking and permanent update lockdown for Chrome, Brave, and Edge", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+
+    // Refresh Action Button
+    float by = startY + 56.0f;
+    RectF checkBtn(startX, by, 280.0f, 38.0f);
+    RenderUtils::DrawGradientButton(
+        g, checkBtn,
+        m_isCheckingUpdates ? L"⏳  Querying Upstream APIs..." : L"🔍  Check Upstream Releases Now",
+        false, false, m_fBold, !m_isCheckingUpdates
+    );
+
+    // Render 3 Browser Update Cards
+    float cardY = by + 52.0f;
+    float cardH = 110.0f;
+
+    for (size_t i = 0; i < 3; ++i) {
+        RectF uCard(startX, cardY + i * (cardH + 12.0f), contentW, cardH);
+        RenderUtils::DrawCard(g, uCard, Theme::BgCard, Theme::BorderSubtle, 8.0f);
+
+        BrowserUpdateInfo info;
+        if (i < m_updateInfos.size()) {
+            info = m_updateInfos[i];
+        } else {
+            info.browserName = m_browsers[i].name;
+            info.isInstalled = m_browsers[i].isInstalled;
+            info.installedVersion = m_browsers[i].version;
+            info.statusText = L"Querying upstream status...";
+        }
+
+        // Browser Name & Icon
+        g.DrawString(info.browserName.c_str(), -1, m_fBold, PointF(uCard.X + 16.0f, uCard.Y + 14.0f), &titleBrush);
+
+        // Version line
+        std::wstring verLine = L"Installed: " + (info.isInstalled ? (L"v" + info.installedVersion) : L"Not Detected");
+        if (!info.latestVersion.empty()) {
+            verLine += L"   ·   Upstream Stable: v" + info.latestVersion;
+        }
+        g.DrawString(verLine.c_str(), -1, m_fSmall, PointF(uCard.X + 16.0f, uCard.Y + 40.0f), &subBrush);
+
+        // Status Text
+        SolidBrush stBrush(info.isUpdateLocked ? Theme::SuccessGreen : Theme::AccentBlue);
+        g.DrawString(info.statusText.c_str(), -1, m_fSmall, PointF(uCard.X + 16.0f, uCard.Y + 68.0f), &stBrush);
+
+        // Status Badge (Top Right)
+        RectF badgeRc(uCard.X + uCard.Width - 170.0f, uCard.Y + 14.0f, 154.0f, 24.0f);
+        if (!info.isInstalled) {
+            RenderUtils::DrawBadge(g, badgeRc, L"NOT DETECTED", Theme::BgCardHover, Theme::TextMuted, m_fSmall);
+        } else if (info.isUpdateLocked) {
+            RenderUtils::DrawBadge(g, badgeRc, L"● LOCKED & FROZEN", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
+        } else if (info.isUpToDate) {
+            RenderUtils::DrawBadge(g, badgeRc, L"● UP TO DATE", Theme::SuccessBadge, Theme::AccentBlue, m_fSmall);
+        } else {
+            RenderUtils::DrawBadge(g, badgeRc, L"● UPDATE PENDING", Theme::WarningBadge, Theme::WarningOrange, m_fSmall);
+        }
+
+        // Action Buttons: Lock vs Unlock
+        if (info.isInstalled) {
+            RectF lockBtn(uCard.X + uCard.Width - 280.0f, uCard.Y + 54.0f, 130.0f, 36.0f);
+            RenderUtils::DrawCard(g, lockBtn, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
+            StringFormat sf;
+            sf.SetAlignment(StringAlignmentCenter);
+            sf.SetLineAlignment(StringAlignmentCenter);
+            g.DrawString(L"🔒 Freeze", -1, m_fSmall, lockBtn, &sf, &titleBrush);
+
+            RectF unlockBtn(uCard.X + uCard.Width - 140.0f, uCard.Y + 54.0f, 130.0f, 36.0f);
+            RenderUtils::DrawCard(g, unlockBtn, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
+            g.DrawString(L"🔓 Allow", -1, m_fSmall, unlockBtn, &sf, &subBrush);
+        }
+    }
 }
 
 void AppWindow::RenderBackups(Graphics& g, const RectF& rect) {
@@ -590,7 +663,7 @@ void AppWindow::RenderBackups(Graphics& g, const RectF& rect) {
     SolidBrush subBrush(Theme::TextSecondary);
     g.DrawString(L"ChromeDebloater automatically backs up registry states before applying tweaks", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
-    float by = startY + 70.0f;
+    float by = startY + 68.0f;
     RectF snapBtn(startX, by, 220.0f, 40.0f);
     RenderUtils::DrawGradientButton(g, snapBtn, L"💾  Create New Snapshot", false, false, m_fBold, !m_isBusy);
 
@@ -611,10 +684,10 @@ void AppWindow::RenderBackups(Graphics& g, const RectF& rect) {
         g.DrawString(L"No previous snapshots found. Click 'Create New Snapshot' to generate one.", -1, m_fNormal, PointF(startX + 16.0f, sy + 20.0f), &subBrush);
     } else {
         for (size_t i = 0; i < m_snapshots.size() && i < 5; ++i) {
-            RectF sRc(startX, sy + i * 60.0f, contentW, 52.0f);
+            RectF sRc(startX, sy + i * 58.0f, contentW, 50.0f);
             RenderUtils::DrawCard(g, sRc, Theme::BgCard, Theme::BorderSubtle, 6.0f);
 
-            g.DrawString(m_snapshots[i].id.c_str(), -1, m_fBold, PointF(sRc.X + 16.0f, sRc.Y + 16.0f), &titleBrush);
+            g.DrawString(m_snapshots[i].id.c_str(), -1, m_fBold, PointF(sRc.X + 16.0f, sRc.Y + 15.0f), &titleBrush);
 
             RectF rst(sRc.X + sRc.Width - 110.0f, sRc.Y + 12.0f, 96.0f, 26.0f);
             RenderUtils::DrawCard(g, rst, Theme::AccentBlue, Theme::AccentBlue, 4.0f);
@@ -634,13 +707,11 @@ void AppWindow::RenderLogs(Graphics& g, const RectF& rect) {
 
     SolidBrush subBrush(Theme::TextSecondary);
 
-    // Show engine status or description
     if (m_isBusy) {
         SolidBrush actBrush(Theme::AccentBlue);
         std::wstring busyMsg = L"⚡ Engine Active: " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%)";
         g.DrawString(busyMsg.c_str(), -1, m_fSubtitle, PointF(startX, startY + 26.0f), &actBrush);
 
-        // Progress bar under title
         RectF pBarBg(startX, startY + 50.0f, contentW, 6.0f);
         SolidBrush pbBg(Color(255, 20, 28, 42));
         RenderUtils::FillRoundedRect(g, pbBg, pBarBg, 3.0f);
@@ -654,7 +725,6 @@ void AppWindow::RenderLogs(Graphics& g, const RectF& rect) {
     } else {
         g.DrawString(L"Real-time event streaming and Win32 kernel command execution", -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
 
-        // Clear button
         RectF clearBtn(startX + contentW - 100.0f, startY + 20.0f, 96.0f, 26.0f);
         RenderUtils::DrawCard(g, clearBtn, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
         StringFormat sfCtr;
@@ -665,7 +735,6 @@ void AppWindow::RenderLogs(Graphics& g, const RectF& rect) {
         startY = 60.0f;
     }
 
-    // Terminal Card
     float termY = startY;
     float termH = rect.Height - termY - 12.0f;
     RectF termRc(startX, termY, contentW, termH);
@@ -695,7 +764,6 @@ void AppWindow::RenderLogs(Graphics& g, const RectF& rect) {
         logLineY += 22.0f;
     }
 
-    // Show "Engine complete" indicator at bottom
     if (!m_isBusy && !m_logs.empty()) {
         SolidBrush readyBrush(Theme::TextMuted);
         g.DrawString(L"● Engine Idle — ready for next operation", -1, m_fSmall,
@@ -712,14 +780,14 @@ void AppWindow::OnMouseWheel(short delta) {
     if (m_currentPage == NavPage::Tweaks) {
         m_tweakScrollY -= (delta / 2);
         if (m_tweakScrollY < 0) m_tweakScrollY = 0;
-        if (m_tweakScrollY > 300) m_tweakScrollY = 300;
+        if (m_tweakScrollY > 400) m_tweakScrollY = 400;
         InvalidateRect(m_hwnd, NULL, FALSE);
     }
 }
 
 void AppWindow::OnLButtonDown(int x, int y) {
     // 1. Sidebar Browser Picker
-    RectF browCard(16.0f, 106.0f, 208.0f, 78.0f);
+    RectF browCard(16.0f, 104.0f, 208.0f, 78.0f);
     if (x >= browCard.X && x <= browCard.X + browCard.Width && y >= browCard.Y + 30.0f && y <= browCard.Y + 62.0f) {
         float btnW = (browCard.Width - 24.0f) / 3.0f;
         int clickedIdx = (int)((x - (browCard.X + 12.0f)) / btnW);
@@ -731,10 +799,10 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
     }
 
-    // 2. Sidebar Navigation Clicks
-    float navY = 206.0f;
-    float navH = 44.0f;
-    for (int i = 0; i < 5; ++i) {
+    // 2. Sidebar Navigation (6 items)
+    float navY = 196.0f;
+    float navH = 38.0f;
+    for (int i = 0; i < 6; ++i) {
         RectF navItem(16.0f, navY + i * (navH + 6.0f), 208.0f, navH);
         if (x >= navItem.X && x <= navItem.X + navItem.Width && y >= navItem.Y && y <= navItem.Y + navItem.Height) {
             m_currentPage = (NavPage)i;
@@ -743,70 +811,100 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
     }
 
-    // 3. Page Specific Actions
+    // 3. Page Actions
     float contentX = 240.0f;
     float startX = contentX + 28.0f;
     float startY = 24.0f;
 
     if (m_currentPage == NavPage::Dashboard) {
-        float actY = startY + 268.0f;
-        // Button 1: Apply Maximum
-        if (x >= startX && x <= startX + 260.0f && y >= actY && y <= actY + 44.0f) {
+        float actY = startY + 250.0f;
+        if (x >= startX && x <= startX + 240.0f && y >= actY && y <= actY + 42.0f) {
+            TweakEngine::ApplyPreset(m_tweaks, TweakPreset::Maximum);
             RunApplyTweaksAsync();
-        }
-        // Button 2: Re-Scan
-        else if (x >= startX + 276.0f && x <= startX + 476.0f && y >= actY && y <= actY + 44.0f) {
-            RunAuditAsync();
-        }
-        // Button 3: Create Snapshot
-        else if (x >= startX + 492.0f && x <= startX + 692.0f && y >= actY && y <= actY + 44.0f) {
-            RunCreateBackupAsync();
+        } else if (x >= startX + 252.0f && x <= startX + 492.0f && y >= actY && y <= actY + 42.0f) {
+            TweakEngine::ApplyPreset(m_tweaks, TweakPreset::UltraLowResource);
+            RunApplyTweaksAsync();
+        } else if (x >= startX + 504.0f && x <= startX + 684.0f && y >= actY && y <= actY + 42.0f) {
+            m_currentPage = NavPage::Updates;
+            RunCheckUpdatesAsync();
+            InvalidateRect(m_hwnd, NULL, FALSE);
         }
     } else if (m_currentPage == NavPage::Tweaks) {
-        // Presets
-        float presY = startY + 56.0f;
+        // Presets row
+        float presY = startY + 52.0f;
         if (y >= presY && y <= presY + 32.0f) {
-            if (x >= startX && x <= startX + 150.0f) {
+            if (x >= startX && x <= startX + 140.0f) {
                 TweakEngine::ApplyPreset(m_tweaks, TweakPreset::Maximum);
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
-            } else if (x >= startX + 160.0f && x <= startX + 310.0f) {
+            } else if (x >= startX + 148.0f && x <= startX + 288.0f) {
                 TweakEngine::ApplyPreset(m_tweaks, TweakPreset::Balanced);
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
-            } else if (x >= startX + 320.0f && x <= startX + 470.0f) {
+            } else if (x >= startX + 296.0f && x <= startX + 436.0f) {
                 TweakEngine::ApplyPreset(m_tweaks, TweakPreset::PrivacyOnly);
+                InvalidateRect(m_hwnd, NULL, FALSE);
+                return;
+            } else if (x >= startX + 444.0f && x <= startX + 614.0f) {
+                TweakEngine::ApplyPreset(m_tweaks, TweakPreset::UltraLowResource);
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
             }
         }
 
         // Toggles
-        float cardY = presY + 44.0f - (float)m_tweakScrollY;
+        float cardY = presY + 42.0f - (float)m_tweakScrollY;
         for (size_t i = 0; i < m_tweaks.size(); ++i) {
-            RectF togRc(startX + (1080.0f - 240.0f - 56.0f) - 52.0f, cardY + 22.0f, 40.0f, 22.0f);
+            RectF togRc(startX + (1080.0f - 240.0f - 56.0f) - 52.0f, cardY + 20.0f, 40.0f, 22.0f);
             if (x >= togRc.X - 10.0f && x <= togRc.X + togRc.Width + 10.0f && y >= togRc.Y && y <= togRc.Y + togRc.Height) {
                 m_tweaks[i].enabled = !m_tweaks[i].enabled;
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
             }
-            cardY += 76.0f;
+            cardY += 74.0f;
         }
 
         // Apply Button
         RECT cr;
         GetClientRect(m_hwnd, &cr);
-        RectF applyBtn(startX, (float)cr.bottom - 64.0f, (float)(cr.right - cr.left) - 240.0f - 56.0f, 44.0f);
+        RectF applyBtn(startX, (float)cr.bottom - 60.0f, (float)(cr.right - cr.left) - 240.0f - 56.0f, 44.0f);
         if (x >= applyBtn.X && x <= applyBtn.X + applyBtn.Width && y >= applyBtn.Y && y <= applyBtn.Y + applyBtn.Height) {
             RunApplyTweaksAsync();
         }
     } else if (m_currentPage == NavPage::Cleaner) {
-        float runY = startY + 70.0f + 340.0f;
-        if (x >= startX && x <= startX + 280.0f && y >= runY && y <= runY + 48.0f) {
+        float cy = startY + 68.0f;
+        float runY = cy + 330.0f;
+        if (x >= startX && x <= startX + 280.0f && y >= runY && y <= runY + 46.0f) {
             RunDeepCleanAsync();
         }
+    } else if (m_currentPage == NavPage::Updates) {
+        float by = startY + 56.0f;
+        // Check updates button
+        if (x >= startX && x <= startX + 280.0f && y >= by && y <= by + 38.0f) {
+            RunCheckUpdatesAsync();
+            return;
+        }
+
+        // Card action buttons (Freeze vs Allow)
+        float cardY = by + 52.0f;
+        float cardH = 110.0f;
+        float contentW = (float)(1080 - 240) - 56.0f;
+
+        for (int i = 0; i < 3; ++i) {
+            RectF uCard(startX, cardY + i * (cardH + 12.0f), contentW, cardH);
+            RectF lockBtn(uCard.X + uCard.Width - 280.0f, uCard.Y + 54.0f, 130.0f, 36.0f);
+            RectF unlockBtn(uCard.X + uCard.Width - 140.0f, uCard.Y + 54.0f, 130.0f, 36.0f);
+
+            if (x >= lockBtn.X && x <= lockBtn.X + lockBtn.Width && y >= lockBtn.Y && y <= lockBtn.Y + lockBtn.Height) {
+                RunToggleUpdateLockAsync(i, true);
+                return;
+            } else if (x >= unlockBtn.X && x <= unlockBtn.X + unlockBtn.Width && y >= unlockBtn.Y && y <= unlockBtn.Y + unlockBtn.Height) {
+                RunToggleUpdateLockAsync(i, false);
+                return;
+            }
+        }
     } else if (m_currentPage == NavPage::Backups) {
-        float by = startY + 70.0f;
+        float by = startY + 68.0f;
         if (x >= startX && x <= startX + 220.0f && y >= by && y <= by + 40.0f) {
             RunCreateBackupAsync();
         } else if (x >= startX + 236.0f && x <= startX + 456.0f && y >= by && y <= by + 40.0f) {
@@ -814,7 +912,6 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
     } else if (m_currentPage == NavPage::Logs) {
         if (!m_isBusy) {
-            // Clear button: top-right of content area, y = startY + 20 to +46
             float contentW = (float)(1080 - 240) - 56.0f;
             float clearBtnX = startX + contentW - 100.0f;
             if (x >= clearBtnX && x <= clearBtnX + 96.0f && y >= startY + 20.0f && y <= startY + 46.0f) {
@@ -827,14 +924,8 @@ void AppWindow::OnLButtonDown(int x, int y) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Asynchronous Worker Dispatchers
+// Async Thread Dispatchers
 // ─────────────────────────────────────────────────────────────────────────────
-
-struct AsyncParam {
-    HWND hwnd;
-    BrowserTarget browser;
-    std::vector<int> tweakIds;
-};
 
 void AppWindow::RunAuditAsync() {
     HWND hwnd = m_hwnd;
@@ -852,17 +943,76 @@ void AppWindow::RunAuditAsync() {
     }, hwnd, 0, NULL);
 }
 
+void AppWindow::RunCheckUpdatesAsync() {
+    if (m_isCheckingUpdates) return;
+    m_isCheckingUpdates = true;
+    HWND hwnd = m_hwnd;
+
+    AddLog(L"Checking upstream release channels for Chrome, Brave, and Edge...", L"ACTION");
+
+    CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
+        HWND h = (HWND)p;
+        AppWindow* win = (AppWindow*)GetWindowLongPtrW(h, GWLP_USERDATA);
+        if (!win) return 0;
+
+        auto infos = UpdateChecker::CheckAll(win->m_browsers);
+        auto* pInfos = new std::vector<BrowserUpdateInfo>(infos);
+        PostMessageW(h, WM_APP_UPDATES_DONE, 0, (LPARAM)pInfos);
+        return 0;
+    }, hwnd, 0, NULL);
+}
+
+void AppWindow::RunToggleUpdateLockAsync(int browserIdx, bool lock) {
+    if (browserIdx < 0 || browserIdx >= (int)m_browsers.size()) return;
+    const BrowserTarget& b = m_browsers[browserIdx];
+
+    if (lock) {
+        AddLog(L"Enforcing 4-layer update freeze for " + b.name + L"...", L"ACTION");
+        TweakEngine::WriteDualRegDword(b.updateKey, L"UpdateDefault", 0);
+        TweakEngine::WriteDualRegDword(b.updateKey, L"AutoUpdateCheckPeriodMinutes", 0);
+        TweakEngine::WriteDualRegDword(b.updateKey, L"DisableAutoUpdateChecksCheckboxValue", 1);
+        TweakEngine::WriteDualRegDword(b.updateKey, L"InstallDefault", 0);
+
+        if (!b.appGuid.empty()) {
+            TweakEngine::WriteDualRegDword(b.updateKey, L"Update" + b.appGuid, 0);
+            TweakEngine::WriteDualRegDword(b.updateKey, L"Install" + b.appGuid, 0);
+            if (!b.version.empty()) {
+                TweakEngine::WriteDualRegString(b.updateKey, L"TargetVersionPrefix" + b.appGuid, b.version);
+            }
+        }
+        AddLog(L"[✓] " + b.name + L" frozen at installed version.", L"SUCCESS");
+    } else {
+        AddLog(L"Restoring update policies for " + b.name + L"...", L"ACTION");
+        TweakEngine::DeleteRegValue(HKEY_LOCAL_MACHINE, b.updateKey, L"UpdateDefault");
+        TweakEngine::DeleteRegValue(HKEY_CURRENT_USER, b.updateKey, L"UpdateDefault");
+        TweakEngine::DeleteRegValue(HKEY_LOCAL_MACHINE, b.updateKey, L"AutoUpdateCheckPeriodMinutes");
+        TweakEngine::DeleteRegValue(HKEY_CURRENT_USER, b.updateKey, L"AutoUpdateCheckPeriodMinutes");
+        if (!b.appGuid.empty()) {
+            TweakEngine::DeleteRegValue(HKEY_LOCAL_MACHINE, b.updateKey, L"TargetVersionPrefix" + b.appGuid);
+            TweakEngine::DeleteRegValue(HKEY_CURRENT_USER, b.updateKey, L"TargetVersionPrefix" + b.appGuid);
+        }
+        AddLog(L"[✓] " + b.name + L" update policies restored to factory defaults.", L"SUCCESS");
+    }
+
+    RunCheckUpdatesAsync();
+    RunAuditAsync();
+}
+
+struct AsyncParam {
+    HWND hwnd;
+    BrowserTarget browser;
+    std::vector<int> tweakIds;
+};
+
 void AppWindow::RunApplyTweaksAsync() {
     if (m_isBusy) return;
     m_isBusy = true;
     m_progressPercent = 0;
     m_progressAction = L"Optimizing...";
 
-    // Auto-navigate to Activity Console so user sees real-time output
     m_currentPage = NavPage::Logs;
     AddLog(L"══════════════════════════════════════════════", L"INFO");
-    AddLog(L"Starting optimization — switch to 'Activity Console' to monitor", L"ACTION");
-    AddLog(L"══════════════════════════════════════════════", L"INFO");
+    AddLog(L"Starting optimization sweep for " + m_browsers[m_selectedBrowserIdx].name, L"ACTION");
 
     std::vector<int> activeIds;
     for (const auto& tw : m_tweaks) {
@@ -874,10 +1024,9 @@ void AppWindow::RunApplyTweaksAsync() {
     param->browser = m_browsers[m_selectedBrowserIdx];
     param->tweakIds = activeIds;
 
-    // First auto-create backup
     std::wstring bPath;
     BackupEngine::CreateSnapshot(param->browser, bPath);
-    AddLog(L"Automated restore snapshot created before applying tweaks.", L"ACTION");
+    AddLog(L"Safety snapshot generated: " + bPath, L"ACTION");
 
     HWND hwnd = m_hwnd;
     CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
@@ -910,7 +1059,6 @@ void AppWindow::RunDeepCleanAsync() {
     m_progressPercent = 0;
     m_progressAction = L"Running deep clean...";
 
-    // Auto-navigate to logs to show progress
     m_currentPage = NavPage::Logs;
     AddLog(L"══════════════════════════════════════════════", L"INFO");
     AddLog(L"Starting Deep Cleaner — SQLite vacuum, cache sweep, DNS flush", L"ACTION");
@@ -950,5 +1098,6 @@ void AppWindow::RunResetPoliciesAsync() {
         BackupEngine::ResetBrowserPolicies(m_browsers[m_selectedBrowserIdx]);
         AddLog(L"All policies deleted. Target browser reset to factory defaults.", L"SUCCESS");
         RunAuditAsync();
+        RunCheckUpdatesAsync();
     }
 }

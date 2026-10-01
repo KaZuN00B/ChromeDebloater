@@ -4,6 +4,7 @@ enum class NavPage {
     Dashboard = 0,
     Tweaks = 1,
     Cleaner = 2,
-    Backups = 3,
-    Logs = 4
+    Updates = 3,
+    Backups = 4,
+    Logs = 5
 };

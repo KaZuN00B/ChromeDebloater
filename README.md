@@ -1,8 +1,8 @@
-# ChromeDebloater Pro
+# ChromeDebloater Pro (v3.2)
 
 **Next-generation, ultra-lightweight Windows C++ software to harden, debloat, and optimize Chromium-based browsers without AI.**
 
-Supports: **Google Chrome**, **Brave Browser**, **Microsoft Edge**
+Supports: **Google Chrome**, **Brave Browser**, **Microsoft Edge** (All versions & channels)
 
 ![ChromeDebloater Pro UI](assets/ui_preview.jpg)
 
@@ -10,61 +10,35 @@ Supports: **Google Chrome**, **Brave Browser**, **Microsoft Edge**
 
 ## What Makes ChromeDebloater Pro Different?
 
-- 🎨 **Redesigned Modern Dark UI**: Built with a custom double-buffered GDI+ rendering engine. No old-school Win32 controls, no Electron, no webview, no Python/Qt bloat. Smooth, responsive 60fps desktop experience in deep obsidian `#0B0E14` with glowing status badges and Segoe UI typography.
-- 🔍 **Live System Audit Engine**: Automatically inspects browser registry configurations and on-disk model caches to calculate your **Hardening & Optimization Score (0% – 100%)** before making changes.
+- 🎨 **Modern Dark UI**: Custom double-buffered GDI+ rendering engine. No old-school Win32 controls, no Electron, no webview, no Python/Qt bloat. Smooth, responsive desktop experience in deep obsidian `#0B0E14` with glowing status badges and Segoe UI typography.
+- 🌐 **Multi-Browser Upstream Update Checker**: Live upstream release queries directly from official APIs (ChromiumDash, Brave GitHub, Microsoft Edge) to verify whether your browser is on the latest stable channel or frozen.
+- 🧊 **Ultra Low-Resource Mode**: Aggressively clamps process creation (`SitePerProcess=0`, `RendererProcessLimit=4`), clamps disk cache (256MB) and media cache (128MB), enables sleeping tabs (5-min inactive sleep), and injects zero-copy rasterization to cut RAM and CPU overhead drastically on low-spec hardware.
+- 🔍 **Live System Audit Engine**: Automatically inspects browser registry configurations across machine (`HKLM`) and user (`HKCU`) hives and on-disk model caches to calculate your **Hardening & Optimization Score (0% – 100%)**.
 - 💾 **1-Click Snapshot & Rollback**: Automatically takes a timestamped registry backup before applying changes. Restore to any previous point or reset all policies to factory defaults with one click.
 - 🧹 **Deep Profile Cleaner**: Compacts and defragments SQLite databases (`History`, `Favicons`, `Web Data`) via Windows built-in `winsqlite3.dll`, sweeps stale GPU/shader caches, and flushes Windows DNS cache.
-- ⚡ **Pure Native Windows Binary**: Only **~201 KB**. Single standalone executable. Zero runtime dependencies.
+- ⚡ **Pure Native Windows Binary**: Only **~276 KB**. Single standalone portable executable. Zero runtime dependencies.
 - 🛡 **Native UAC Elevation**: Embedded `requireAdministrator` manifest ensures seamless administrator privilege handling.
-- 🖥 **Dual-Mode (GUI + Headless CLI)**: Double-click to launch the graphical dashboard, or run headlessly via terminal / scripts with `--all`, `--audit`, or `--clean`.
+- 🖥 **Dual-Mode (GUI + Headless CLI)**: Double-click to launch the graphical dashboard, or run headlessly via terminal / scripts with `--all`, `--low-resource`, `--check-updates`, `--audit`, or `--clean`.
 
 ---
 
-## Software Architecture
-
-```
-ChromeDebloater/
-├── src/
-│   ├── main.cpp                  # wWinMain entry point, CLI parser, elevation check, message loop
-│   ├── ui/
-│   │   ├── window.h / .cpp       # Modern main window, view controller, thread dispatcher
-│   │   ├── theme.h               # Obsidian dark palette, colors, fonts
-│   │   ├── render_utils.h / .cpp # GDI+ double-buffered renderer (cards, gauges, toggles, badges)
-│   │   └── navigation.h          # Sidebar view routing (Dashboard, Tweaks, Cleaner, Backups, Logs)
-│   ├── engine/
-│   │   ├── browser_target.h      # Chromium browser discovery & version detection
-│   │   ├── audit_engine.h / .cpp # Real-time system scanner & 0-100% hardening score calculator
-│   │   ├── tweak_engine.h / .cpp # Enterprise policy manager, flag injector, SCM service controller
-│   │   ├── backup_engine.h / .cpp# Automated registry snapshots & rollback manager
-│   │   └── sqlite_cleaner.h      # Dynamic winsqlite3.dll VACUUM and REINDEX engine
-│   ├── app.manifest              # UAC requireAdministrator + ComCtl32 v6 visual styles
-│   └── app.rc                    # Windows resource script
-├── dist/
-│   └── ChromeDebloater.exe       # Standalone compiled portable executable (~201 KB)
-├── assets/
-│   └── ui_preview.jpg            # Application interface preview
-├── CMakeLists.txt                # CMake build configuration
-├── build.ps1                     # Native MSVC command-line build script
-├── LICENSE                       # MIT License
-└── README.md
-```
-
----
-
-## Included Modules
+## Included Modules (13 Granular Subsystems)
 
 | Subsystem | Category | Description |
 |---|---|---|
-| 🤖 **AI & Gemini Elimination** | Security | Enforces 25 enterprise policies disabling Gemini, OptimizationGuide, PromptAPI, etc., and deletes local foundational models. |
-| 🔒 **Privacy & Content Hardening** | Privacy | Enforces Quad9 DNS-over-HTTPS, HTTPS-Only mode, WebRTC IP leakage mitigation, TLS 1.2 minimum, anti-tracking, and blocks intrusive device sensors. |
-| 📡 **Telemetry Suppression** | Privacy | Shuts down metrics reporting, SafeBrowsing extended telemetry, background cleanup scanner, and user feedback hooks. |
-| 🔑 **Authentication Preservation** | Compatibility | Explicitly allowlists Google auth cookies to keep **Google Sync** and **Google Password Manager** operational (Chrome only). |
-| ⚡ **Low-RAM & Performance** | Performance | Clamps process inflation (`SitePerProcess=0`), enables maximum tab Memory Saver, enables GPU hardware offload, throttles background JS timers. |
-| 🚀 **Performance Flags** | Performance | Injects QUIC, parallel downloading, GPU rasterization, zero-copy, and back-forward cache into `Local State`. |
-| 🧹 **UI Debloat** | Interface | Strips Cast icon from toolbar, Desktop Sharing Hub, shared clipboard, and web app install promotions. |
-| 🔍 **Search Provider** | Privacy | Configures private Brave Search as the default search engine. |
-| 🔧 **Deep Maintenance** | Health | Vacuums and reindexes SQLite databases (`History`, `Favicons`, `Web Data`) via Windows native SQLite, cleans shader/GPU caches, and flushes DNS. |
-| 📌 **Permanent Version Freeze** | Control | 4-layer update lockdown for Google Chrome: enterprise update policies, GoogleUpdater services disabled, scheduled tasks disabled. |
+| 🤖 **AI & Gemini Elimination** | Security | Kills Gemini, PromptAPI, OptimizationGuide, and Edge Copilot across machine and user hives, and purges on-disk foundational models. |
+| 🔒 **Quad9 DoH & Network Guard** | Privacy | Enforces Quad9 DNS-over-HTTPS, HTTPS-Only mode, WebRTC IP leakage mitigation, TLS 1.2 minimum, and blocks device sensors. |
+| 📡 **Telemetry & Diagnostics** | Privacy | Suppresses metrics reporting, SafeBrowsing extended telemetry, crashpad diagnostics, Chrome Variations A/B tests, and Edge DiagnosticData. |
+| 🔑 **Authentication Preservation** | Compatibility | Explicitly allowlists authentication cookies to keep Google Sync and Password Manager (Chrome) or Microsoft Account (Edge) functional. |
+| ⚡ **Process Clamping & Memory Saver** | Performance | Clamps subframe process inflation (`SitePerProcess=0`), enables maximum tab Memory Saver, enables GPU hardware offload, throttles background JS timers. |
+| 🧊 **Ultra Low-Resource Limits** | Performance | Caps renderers to 4, limits disk cache to 256MB, media cache to 128MB, enforces 5-min background tab sleep, and disables speculative prefetching. |
+| 🚀 **High-Speed Performance Flags** | Performance | Injects QUIC, zero-copy rasterization, D3D11 ANGLE, Skia Graphite, proactive tab discarding, and parallel downloading into `Local State`. |
+| 🚫 **Privacy Sandbox & Ad Topics** | Privacy | Disables Google Topics API, Privacy Sandbox ad measurement, site-commissioned ads, and user survey prompts. |
+| 🛒 **Commercial & Shopping Bloat** | Debloat | Disables price tracking, shopping list prompts, Edge shopping discounts/coupons, Math Solver, and floating desktop search widgets. |
+| 🧹 **UI Clutter & Background Stripping** | Interface | Strips Cast icon from toolbar, Desktop Sharing Hub, shared clipboard, Google Lens search, and new tab page news feeds. |
+| 🔍 **Private Search Provider** | Privacy | Configures private Brave Search as the default search engine, replacing telemetry-heavy search engines. |
+| 🔧 **Profile Defragmentation** | Health | Vacuums and reindexes SQLite databases (`History`, `Favicons`, `Web Data`) via Windows native SQLite, cleans shader/GPU caches, and flushes DNS. |
+| 📌 **Permanent 4-Layer Update Lockdown** | Control | Freezes browser version across services, scheduled tasks, and enterprise policies for Chrome, Brave, and Edge. |
 
 ---
 
@@ -73,22 +47,33 @@ ChromeDebloater/
 1. Download **`ChromeDebloater.exe`** from the [Releases](https://github.com/KaZuN00B/ChromeDebloater/releases) page or from `dist/ChromeDebloater.exe`.
 2. Double-click the executable and accept the Windows UAC Administrator prompt.
 3. Use the sidebar to switch between:
-   - 📊 **Dashboard**: View your Hardening Score and run 1-click optimizations.
-   - ⚡ **Optimizations**: Choose from **Maximum**, **Balanced**, or **Privacy** presets, or toggle individual modules.
-   - 🧹 **Deep Cleaner**: Vacuum databases and clean shader bloat.
+   - 📊 **Dashboard**: View your Hardening Score, RAM status, and trigger quick presets.
+   - ⚡ **Optimizations**: Choose from **Maximum**, **Balanced**, **Privacy**, or **Ultra-Low Resource** presets, or toggle individual modules.
+   - 🧹 **Deep Cleaner**: Vacuum profile databases and purge GPU/shader caches.
+   - 🌐 **Browser Updates**: Verify upstream releases and toggle update freeze per browser.
    - 🔄 **Backups & Restore**: Create restore points or rollback to previous registry states.
-   - 📜 **Activity Console**: Monitor live execution events.
+   - 📜 **Activity Console**: Monitor live execution events in real time.
 
 ---
 
 ## Command-Line / Scripting Usage
 
 ```cmd
-:: Run a full system audit and view your score
+:: Check upstream releases & version status for Chrome, Brave, and Edge
+ChromeDebloater.exe --check-updates
+
+:: Run a full system audit and view your hardening score
 ChromeDebloater.exe --audit
 
-:: Apply all 10 optimizations headlessly (auto-creates a safety restore point first)
+:: Apply Ultra Low-Resource profile (ideal for low-spec PCs, VMs, or multi-tab usage)
+ChromeDebloater.exe --low-resource --browser chrome
+
+:: Apply all 13 optimizations headlessly (auto-creates a safety restore point first)
 ChromeDebloater.exe --all --browser chrome
+
+:: Freeze or allow browser updates
+ChromeDebloater.exe --lock-updates --browser chrome
+ChromeDebloater.exe --unlock-updates --browser chrome
 
 :: Deep clean SQLite profile databases, purge caches, and flush DNS
 ChromeDebloater.exe --clean
@@ -99,22 +84,18 @@ ChromeDebloater.exe --help
 
 ---
 
-## Building from Source
+## Building From Source
 
-### Prerequisites
-- Windows 10 / 11 (x64)
-- Visual Studio 2022 / 2026 or Visual Studio C++ Build Tools (with C++20 support)
+Requires: **Visual Studio Build Tools (C++20)**.
 
-### One-Click PowerShell Build
 ```powershell
-cd C:\Users\Admin\Documents\ChromeDebloater
-.\build.ps1 -Clean
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Clean
 ```
 
-The compiled binary will be placed at `dist\ChromeDebloater.exe` (~201 KB).
+Produces a standalone executable at `dist\ChromeDebloater.exe`.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License. Free to use, modify, and redistribute.

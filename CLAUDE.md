@@ -21,6 +21,6 @@ Pure native Windows C++20 software to harden, debloat, and optimize Chromium-bas
 - `src/engine/update_checker.cpp` & `update_checker.h`: Live multi-browser upstream version queries.
 
 ## Key Operational Patterns
-- **No External Dependencies**: Use Win32 APIs, GDI+, and Windows built-in `winsqlite3.dll`.
-- **Default Browser Fix**: Dual HKLM/HKCU `DefaultBrowserSettingEnabled=0`, `HideFirstRunExperience=1`, sentinel `First Run` file, JSON preference patching.
+- **Default & Pin Nags Annihilation**: 4-layer defense: (1) Machine & User policies (`DefaultBrowserSettingEnabled=0`, `PromotionsEnabled=0`, `HideFirstRunExperience=1`), (2) Local State 999 threshold injection & disabling lab experiments (`default-browser-prompt-refresh-2024@2`, `taskbar-pin-promo@2`, `separate-default-and-pin-prompt@2`), (3) Profile Preferences (`taskbar_pinning_promo_dismissed: true`, `check_default_browser: false`), (4) Shortcut flag injection across Desktop, Start Menu & Taskbar (`--no-default-browser-check`, `--disable-features=DefaultBrowserPromptRefresh2024,DefaultBrowserPromptSurfaces,DefaultBrowserFramework,SeparateDefaultAndPinPrompt,TaskbarPinningPromo`).
 - **Gaming Mode**: Low latency, unlocked FPS (`--disable-frame-rate-limit`), zero VSync (`--disable-gpu-vsync`), zero timer throttling (`--disable-background-timer-throttling`), 100MB cache limit.
+

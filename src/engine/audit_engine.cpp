@@ -381,7 +381,8 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     // ─────────────────────────────────────────────────────────────────────────
     bool zenActive = CheckDualDword(p, L"TabHoverCardImages", 0) &&
                      CheckDualDword(p, L"LensOverlaySettings", 1) &&
-                     CheckDualDword(p, L"QuietNotificationPromptsEnabled", 1);
+                     CheckDualDword(p, L"QuietNotificationPromptsEnabled", 1) &&
+                     CheckDword(HKEY_LOCAL_MACHINE, p, L"DefaultBrowserSettingEnabled", 0);
 
     AuditItem itemZen;
     itemZen.id = 12;
@@ -389,13 +390,13 @@ AuditReport AuditEngine::PerformAudit(const BrowserTarget& browser) {
     itemZen.name = L"Zen UI & Quiet Notifications";
     if (zenActive) {
         itemZen.status = AuditStatus::Optimized;
-        itemZen.description = L"Tab hover preview popups killed, Google Lens stripped & notification nags quieted.";
+        itemZen.description = L"Tab hover preview popups killed, Google Lens stripped & default/pin nags permanently silenced.";
         itemZen.recommendation = L"Clean interface.";
         report.optimizedCount++;
     } else {
         itemZen.status = AuditStatus::Bloated;
-        itemZen.description = L"Intrusive hover thumbnails, Google Lens prompts & notification popups enabled.";
-        itemZen.recommendation = L"Apply Zen UI declutter module.";
+        itemZen.description = L"Default browser nag, taskbar pin prompts, or intrusive hover thumbnails enabled.";
+        itemZen.recommendation = L"Apply Zen UI & anti-nag declutter module.";
         report.bloatedCount++;
     }
     report.items.push_back(itemZen);

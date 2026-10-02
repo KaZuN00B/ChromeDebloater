@@ -54,5 +54,6 @@ public:
     static bool WriteRegList(HKEY hRoot, const std::wstring& subKey, const std::wstring& listName, const std::vector<std::wstring>& items);
     static bool DeleteRegValue(HKEY hRoot, const std::wstring& subKey, const std::wstring& name);
     static bool RemoveDirRecursive(const std::wstring& path);
+    static bool PermanentlySilenceDefaultAndPinPrompts(const BrowserTarget& browser, EngineLogCallback logCb);
     static void KillProcesses(const std::wstring& exeName);
 };

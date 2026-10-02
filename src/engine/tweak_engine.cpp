@@ -2,6 +2,7 @@
 #include "audit_engine.h"
 #include "sqlite_cleaner.h"
 #include "network_shield.h"
+#include "shortcut_manager.h"
 #include <tlhelp32.h>
 #include <fstream>
 #include <sstream>
@@ -270,6 +271,278 @@ static void DisableServiceByPrefix(const std::wstring& prefix) {
         }
     }
     CloseServiceHandle(scm);
+}
+
+bool TweakEngine::PermanentlySilenceDefaultAndPinPrompts(const BrowserTarget& browser, EngineLogCallback logCb) {
+    const std::wstring& p = browser.policyKey;
+
+    // 1. Enforce Machine (HKLM) and User (HKCU) Enterprise Policies
+    // Note: Chrome requires HKLM for device/browser-scope policies like DefaultBrowserSettingEnabled and PromotionsEnabled.
+    WriteDualRegDword(p, L"DefaultBrowserSettingEnabled", 0);
+    WriteDualRegDword(p, L"HideFirstRunExperience", 1);
+    WriteDualRegDword(p, L"PromotionsEnabled", 0);
+    WriteDualRegDword(p, L"WelcomePageOnOSUpgradeEnabled", 0);
+    WriteDualRegDword(p, L"SearchEngineChoiceScreenNavigationCondition", 0);
+
+    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"DefaultBrowserSettingEnabled", 0);
+    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"HideFirstRunExperience", 1);
+    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"PromotionsEnabled", 0);
+    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"WelcomePageOnOSUpgradeEnabled", 0);
+    WriteRegDword(HKEY_LOCAL_MACHINE, p, L"SearchEngineChoiceScreenNavigationCondition", 0);
+
+    logCb(L"  [✓] Dual-hive enterprise policies enforced (DefaultBrowserSettingEnabled=0, PromotionsEnabled=0).", L"INFO");
+
+    // 2. Touch First Run Marker
+    if (PathExists(browser.userDataDir)) {
+        std::wstring frPath = browser.userDataDir + L"\\First Run";
+        if (!PathExists(frPath)) {
+            std::ofstream fr(frPath, std::ios::binary);
+            if (fr.is_open()) fr.close();
+            logCb(L"  [✓] First Run marker created (silences first-run onboarding & pin promos).", L"INFO");
+        }
+    }
+
+    // 3. Patch Local State (declined counts = 999, pin infobar = 999, disabled lab experiments)
+    std::wstring lsPath = browser.userDataDir + L"\\Local State";
+    if (PathExists(lsPath)) {
+        std::ifstream in(lsPath, std::ios::binary);
+        if (in.is_open()) {
+            std::stringstream ss;
+            ss << in.rdbuf();
+            in.close();
+            std::string c = ss.str();
+
+            if (c.size() >= 3 && (unsigned char)c[0] == 0xEF && (unsigned char)c[1] == 0xBB && (unsigned char)c[2] == 0xBF) {
+                c.erase(0, 3);
+            }
+
+            // Ensure "browser" object exists and contains 999 decline thresholds
+            size_t bPos = c.find("\"browser\"");
+            if (bPos != std::string::npos) {
+                size_t bracePos = c.find('{', bPos);
+                if (bracePos != std::string::npos) {
+                    std::vector<std::pair<std::string, std::string>> bKeys = {
+                        {"\"default_browser_declined_count\"", "999"},
+                        {"\"default_browser_infobar_declined_count\"", "999"},
+                        {"\"pin_infobar_times_shown\"", "999"},
+                        {"\"pdf_infobar_times_shown\"", "999"},
+                        {"\"first_run_finished\"", "true"}
+                    };
+                    for (const auto& kv : bKeys) {
+                        size_t kPos = c.find(kv.first);
+                        if (kPos != std::string::npos && kPos > bPos) {
+                            size_t colon = c.find(':', kPos);
+                            if (colon != std::string::npos) {
+                                size_t valStart = c.find_first_not_of(" \t\r\n", colon + 1);
+                                size_t valEnd = c.find_first_of(",}\r\n", valStart);
+                                if (valStart != std::string::npos && valEnd != std::string::npos) {
+                                    c.replace(valStart, valEnd - valStart, kv.second);
+                                }
+                            }
+                        } else {
+                            c.insert(bracePos + 1, "\n    " + kv.first + ": " + kv.second + ",");
+                        }
+                    }
+                }
+            } else {
+                size_t rootBrace = c.find('{');
+                if (rootBrace != std::string::npos) {
+                    std::string bBlock = "\n  \"browser\": {\n"
+                                         "    \"default_browser_declined_count\": 999,\n"
+                                         "    \"default_browser_infobar_declined_count\": 999,\n"
+                                         "    \"pin_infobar_times_shown\": 999,\n"
+                                         "    \"pdf_infobar_times_shown\": 999,\n"
+                                         "    \"first_run_finished\": true\n"
+                                         "  },";
+                    c.insert(rootBrace + 1, bBlock);
+                }
+            }
+
+            // Inject anti-prompt experiments into enabled_labs_experiments
+            std::vector<std::string> antiExperiments = {
+                "default-browser-prompt-refresh-2024@2",
+                "taskbar-pin-promo@2",
+                "separate-default-and-pin-prompt@2"
+            };
+
+            size_t expPos = c.find("\"enabled_labs_experiments\"");
+            if (expPos != std::string::npos) {
+                size_t openB = c.find('[', expPos);
+                if (openB != std::string::npos) {
+                    for (const auto& exp : antiExperiments) {
+                        if (c.find("\"" + exp + "\"") == std::string::npos) {
+                            c.insert(openB + 1, "\"" + exp + "\",");
+                        }
+                    }
+                }
+            } else {
+                size_t bPos2 = c.find("\"browser\"");
+                if (bPos2 != std::string::npos) {
+                    size_t bBrace = c.find('{', bPos2);
+                    if (bBrace != std::string::npos) {
+                        std::string expBlock = "\n    \"enabled_labs_experiments\": [\n"
+                                               "      \"default-browser-prompt-refresh-2024@2\",\n"
+                                               "      \"taskbar-pin-promo@2\",\n"
+                                               "      \"separate-default-and-pin-prompt@2\"\n"
+                                               "    ],";
+                        c.insert(bBrace + 1, expBlock);
+                    }
+                }
+            }
+
+            std::ofstream out(lsPath, std::ios::binary | std::ios::trunc);
+            if (out.is_open()) {
+                out << c;
+                out.close();
+                logCb(L"  [✓] Local State hardened: 999 decline thresholds & pin promo flags disabled.", L"INFO");
+            }
+        }
+    }
+
+    // 4. Patch Profile Preferences (Default, Profile 1, Profile 2, etc.)
+    std::vector<std::wstring> profileDirs = {
+        browser.userDataDir + L"\\Default",
+        browser.userDataDir + L"\\Profile 1",
+        browser.userDataDir + L"\\Profile 2"
+    };
+    for (const auto& profDir : profileDirs) {
+        std::wstring prefPath = profDir + L"\\Preferences";
+        if (PathExists(prefPath)) {
+            std::ifstream in(prefPath, std::ios::binary);
+            if (in.is_open()) {
+                std::stringstream ss;
+                ss << in.rdbuf();
+                in.close();
+                std::string s = ss.str();
+                if (s.size() >= 3 && (unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB && (unsigned char)s[2] == 0xBF) {
+                    s.erase(0, 3);
+                }
+
+                // Root: "taskbar_pinning_promo_dismissed": true
+                if (s.find("\"taskbar_pinning_promo_dismissed\"") == std::string::npos) {
+                    size_t rootBrace = s.find('{');
+                    if (rootBrace != std::string::npos) {
+                        s.insert(rootBrace + 1, "\n  \"taskbar_pinning_promo_dismissed\": true,");
+                    }
+                } else {
+                    size_t pPos = s.find("\"taskbar_pinning_promo_dismissed\"");
+                    size_t colon = s.find(':', pPos);
+                    if (colon != std::string::npos) {
+                        size_t valStart = s.find_first_not_of(" \t\r\n", colon + 1);
+                        size_t valEnd = s.find_first_of(",}\r\n", valStart);
+                        if (valStart != std::string::npos && valEnd != std::string::npos) {
+                            s.replace(valStart, valEnd - valStart, "true");
+                        }
+                    }
+                }
+
+                // Browser block
+                size_t bPos = s.find("\"browser\"");
+                if (bPos != std::string::npos) {
+                    size_t bBrace = s.find('{', bPos);
+                    if (bBrace != std::string::npos) {
+                        std::vector<std::pair<std::string, std::string>> bPrefs = {
+                            {"\"check_default_browser\"", "false"},
+                            {"\"has_seen_welcome_page\"", "true"},
+                            {"\"default_browser_infobar_declined_count\"", "999"}
+                        };
+                        for (const auto& kv : bPrefs) {
+                            size_t kPos = s.find(kv.first);
+                            if (kPos != std::string::npos) {
+                                size_t colon = s.find(':', kPos);
+                                if (colon != std::string::npos) {
+                                    size_t valStart = s.find_first_not_of(" \t\r\n", colon + 1);
+                                    size_t valEnd = s.find_first_of(",}\r\n", valStart);
+                                    if (valStart != std::string::npos && valEnd != std::string::npos) {
+                                        s.replace(valStart, valEnd - valStart, kv.second);
+                                    }
+                                }
+                            } else {
+                                s.insert(bBrace + 1, "\n    " + kv.first + ": " + kv.second + ",");
+                            }
+                        }
+                    }
+                } else {
+                    size_t rootBrace = s.find('{');
+                    if (rootBrace != std::string::npos) {
+                        std::string bBlock = "\n  \"browser\": {\n"
+                                             "    \"check_default_browser\": false,\n"
+                                             "    \"has_seen_welcome_page\": true,\n"
+                                             "    \"default_browser_infobar_declined_count\": 999\n"
+                                             "  },";
+                        s.insert(rootBrace + 1, bBlock);
+                    }
+                }
+
+                // Profile block: "default_browser_prompt_dismissed": true
+                size_t profPos = s.find("\"profile\"");
+                if (profPos != std::string::npos) {
+                    size_t pBrace = s.find('{', profPos);
+                    if (pBrace != std::string::npos) {
+                        if (s.find("\"default_browser_prompt_dismissed\"") == std::string::npos) {
+                            s.insert(pBrace + 1, "\n    \"default_browser_prompt_dismissed\": true,");
+                        }
+                    }
+                }
+
+                std::ofstream out(prefPath, std::ios::binary | std::ios::trunc);
+                if (out.is_open()) {
+                    out << s;
+                    out.close();
+                    logCb(L"  [✓] Profile preferences patched: " + prefPath, L"INFO");
+                }
+            }
+        }
+    }
+
+    // 5. Patch initial_preferences / master_preferences if present in application directory
+    if (!browser.exePath.empty()) {
+        size_t lastSlash = browser.exePath.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            std::wstring appDir = browser.exePath.substr(0, lastSlash);
+            std::vector<std::wstring> initFiles = {
+                appDir + L"\\initial_preferences",
+                appDir + L"\\master_preferences"
+            };
+            for (const auto& initFile : initFiles) {
+                if (PathExists(initFile)) {
+                    std::ifstream in(initFile, std::ios::binary);
+                    if (in.is_open()) {
+                        std::stringstream ss;
+                        ss << in.rdbuf();
+                        in.close();
+                        std::string content = ss.str();
+                        if (content.size() >= 3 && (unsigned char)content[0] == 0xEF && (unsigned char)content[1] == 0xBB && (unsigned char)content[2] == 0xBF) {
+                            content.erase(0, 3);
+                        }
+
+                        size_t distPos = content.find("\"distribution\"");
+                        if (distPos != std::string::npos) {
+                            size_t dBrace = content.find('{', distPos);
+                            if (dBrace != std::string::npos) {
+                                if (content.find("\"suppress_first_run_default_browser_prompt\"") == std::string::npos) {
+                                    content.insert(dBrace + 1, "\n    \"suppress_first_run_default_browser_prompt\": true,\n    \"skip_first_run_ui\": true,\n    \"make_chrome_default\": false,");
+                                }
+                            }
+                        }
+
+                        std::ofstream out(initFile, std::ios::binary | std::ios::trunc);
+                        if (out.is_open()) {
+                            out << content;
+                            out.close();
+                            logCb(L"  [✓] Application master initial_preferences patched.", L"INFO");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. Automatically scan and harden all desktop, Start Menu and taskbar shortcuts
+    ShortcutManager::HardenShortcuts(browser, logCb);
+
+    logCb(L"[✓] Default browser checks & taskbar pin nags permanently extinguished across 4 layers.", L"SUCCESS");
+    return true;
 }
 
 bool TweakEngine::ExecuteTweaks(
@@ -652,59 +925,40 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"LensRegionSearchEnabled", 0);
                 WriteDualRegDword(p, L"SideSearchEnabled", 0);
 
-                // Universal Chrome/Brave/Edge: Suppress Default Browser checks & First-Run Welcome
-                WriteDualRegDword(p, L"DefaultBrowserSettingEnabled", 0);
-                WriteDualRegDword(p, L"HideFirstRunExperience", 1);
-                WriteDualRegDword(p, L"PromotionsEnabled", 0);
+                // Universal Chrome/Brave/Edge: Suppress Default Browser checks & Taskbar Pin nags permanently
+                PermanentlySilenceDefaultAndPinPrompts(browser, logCb);
 
-                // Create First Run file marker to permanently silence onboarding and default browser dialogs
-                std::wstring firstRunFile = browser.userDataDir + L"\\First Run";
-                if (!PathExists(firstRunFile) && PathExists(browser.userDataDir)) {
-                    std::ofstream fr(firstRunFile, std::ios::binary | std::ios::out);
-                    if (fr.is_open()) {
-                        fr.close();
-                        logCb(L"  [✓] First Run marker created (permanently silences default browser & welcome popups).", L"INFO");
-                    }
-                }
+                if (browser.id == L"brave") {
+                    std::wstring prefPath = browser.userDataDir + L"\\Default\\Preferences";
+                    if (PathExists(prefPath)) {
+                        std::ifstream in(prefPath, std::ios::binary);
+                        if (in.is_open()) {
+                            std::stringstream ss;
+                            ss << in.rdbuf();
+                            in.close();
+                            std::string prefStr = ss.str();
+                            bool changed = false;
 
-                // Preferences JSON Patching (Default browser & Taskbar Pin Promo for all browsers)
-                std::wstring prefPath = browser.userDataDir + L"\\Default\\Preferences";
-                if (PathExists(prefPath)) {
-                    std::ifstream in(prefPath, std::ios::binary);
-                    if (in.is_open()) {
-                        std::stringstream ss;
-                        ss << in.rdbuf();
-                        in.close();
-                        std::string prefStr = ss.str();
-                        bool changed = false;
+                            auto replaceAll = [&](const std::string& from, const std::string& to) {
+                                size_t pos = 0;
+                                while ((pos = prefStr.find(from, pos)) != std::string::npos) {
+                                    prefStr.replace(pos, from.length(), to);
+                                    pos += to.length();
+                                    changed = true;
+                                }
+                            };
 
-                        auto replaceAll = [&](const std::string& from, const std::string& to) {
-                            size_t pos = 0;
-                            while ((pos = prefStr.find(from, pos)) != std::string::npos) {
-                                prefStr.replace(pos, from.length(), to);
-                                pos += to.length();
-                                changed = true;
-                            }
-                        };
-
-                        // Silence default browser check & taskbar pin promo
-                        replaceAll("\"check_default_browser\":true", "\"check_default_browser\":false");
-                        replaceAll("\"has_seen_welcome_page\":false", "\"has_seen_welcome_page\":true");
-                        replaceAll("\"taskbar_pinning_promo_dismissed\":false", "\"taskbar_pinning_promo_dismissed\":true");
-
-                        if (browser.id == L"brave") {
                             replaceAll("\"show_sponsored_images\":true", "\"show_sponsored_images\":false");
                             replaceAll("\"should_show_on_new_tab\":true", "\"should_show_on_new_tab\":false");
                             replaceAll("\"show_brave_talk\":true", "\"show_brave_talk\":false");
                             replaceAll("\"show_together\":true", "\"show_together\":false");
-                        }
 
-                        if (changed) {
-                            std::ofstream out(prefPath, std::ios::binary | std::ios::trunc);
-                            if (out.is_open()) {
-                                out << prefStr;
-                                out.close();
-                                logCb(L"  [✓] Default browser nag & taskbar pin promos silenced in profile preferences.", L"INFO");
+                            if (changed) {
+                                std::ofstream out(prefPath, std::ios::binary | std::ios::trunc);
+                                if (out.is_open()) {
+                                    out << prefStr;
+                                    out.close();
+                                }
                             }
                         }
                     }
@@ -804,55 +1058,18 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"PromotionsEnabled", 0);
                 WriteDualRegDword(p, L"SuppressUnsupportedOSWarning", 1);
                 WriteDualRegDword(p, L"SearchEngineChoiceScreenNavigationCondition", 0);
-                WriteDualRegDword(p, L"DefaultBrowserSettingEnabled", 0);
-                WriteDualRegDword(p, L"HideFirstRunExperience", 1);
 
-                // Inject Local State flags: disable tab search & disable tab hover cards & pin promo
-                std::wstring lsPath = browser.userDataDir + L"\\Local State";
-                if (PathExists(lsPath)) {
-                    std::ifstream in(lsPath, std::ios::binary);
-                    if (in.is_open()) {
-                        std::stringstream ss;
-                        ss << in.rdbuf();
-                        in.close();
-                        std::string c = ss.str();
-                        bool modified = false;
-
-                        std::vector<std::string> zenFlags = {
-                            "enable-tab-search@0",
-                            "tab-hover-card-images@0",
-                            "taskbar-pin-promo@2"
-                        };
-
-                        size_t pos = c.find("\"enabled_labs_experiments\"");
-                        if (pos != std::string::npos) {
-                            size_t openBracket = c.find('[', pos);
-                            if (openBracket != std::string::npos) {
-                                for (const auto& zf : zenFlags) {
-                                    if (c.find("\"" + zf + "\"") == std::string::npos) {
-                                        c.insert(openBracket + 1, "\"" + zf + "\",");
-                                        modified = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (modified) {
-                            std::ofstream out(lsPath, std::ios::binary | std::ios::trunc);
-                            if (out.is_open()) {
-                                out << c;
-                                out.close();
-                                logCb(L"  [✓] Tab search arrow and hover image flags disabled in Local State.", L"INFO");
-                            }
-                        }
-                    }
-                }
+                // Universal Chrome/Brave/Edge: Permanently Silence Default Browser checks & Taskbar Pin nags
+                PermanentlySilenceDefaultAndPinPrompts(browser, logCb);
 
                 logCb(L"[✓] Zen UI enforced: tab hover previews killed, Google Lens stripped & notification nags silenced.", L"SUCCESS");
                 break;
             }
         }
     }
+
+    // Ensure 4-layer anti-nag & shortcut hardening is universally enforced upon optimization
+    PermanentlySilenceDefaultAndPinPrompts(browser, logCb);
 
     progCb(100, L"Ready.");
     logCb(L"══ All " + std::to_wstring(total) + L" optimizations applied and verified successfully. ══", L"SUCCESS");

@@ -41,10 +41,12 @@ In the Antigravity IDE or desktop sidebar, open **Session History** and select t
 - **GUI & CLI Access**: Dashboard Quick Action pill (`🎮 Gaming Mode`), Optimizations preset, and `--gaming` / `-g` CLI switches.
 
 ### B. Persistent Default & Pinned Browser Fix (Universal Windows Support)
-- **Dual Group Policies**: `DefaultBrowserSettingEnabled = 0`, `HideFirstRunExperience = 1` across `HKLM` and `HKCU`.
+- **Machine & User Dual Group Policies**: `DefaultBrowserSettingEnabled = 0`, `HideFirstRunExperience = 1`, `PromotionsEnabled = 0`, `WelcomePageOnOSUpgradeEnabled = 0` across `HKLM` and `HKCU`.
 - **First Run Sentinel**: Automatically touches `%LOCALAPPDATA%\Google\Chrome\User Data\First Run`.
-- **Preferences JSON Patching**: Injects `"suppress_first_run_default_browser_prompt": true` and sets `"default_browser_infobar_last_declined"` timestamps.
-- **Shortcut Flags**: Injects `--no-default-browser-check` across all desktop and Start Menu shortcuts.
+- **Local State Injections**: Sets `default_browser_declined_count = 999`, `pin_infobar_times_shown = 999`, and disables `default-browser-prompt-refresh-2024@2`, `taskbar-pin-promo@2`, and `separate-default-and-pin-prompt@2`.
+- **Profile Preferences JSON Patching**: Injects `"taskbar_pinning_promo_dismissed": true`, `"check_default_browser": false`, and sets `"default_browser_infobar_declined_count": 999`.
+- **Application Master Preferences**: Enforces `"suppress_first_run_default_browser_prompt": true` and `"skip_first_run_ui": true` in `initial_preferences`.
+- **Shortcut & Launcher Flags**: Injects `--no-default-browser-check` and `--disable-features=DefaultBrowserPromptRefresh2024,DefaultBrowserPromptSurfaces,DefaultBrowserFramework,SeparateDefaultAndPinPrompt,TaskbarPinningPromo` across all desktop, Start Menu, taskbar, and gaming batch launchers.
 
 ### C. Expanded Modern Dark UI (1260×820)
 - **Window Size**: 1260×820 centered with DPI-aware coordinate mapping.

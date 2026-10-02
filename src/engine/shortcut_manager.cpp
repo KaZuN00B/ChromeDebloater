@@ -5,7 +5,13 @@
 #include <sstream>
 #include <algorithm>
 
-static const wchar_t* kHardenedArgs = L"--no-default-browser-check --no-pings --disable-search-engine-choice-screen --disable-breakpad --disable-domain-reliability --disable-features=MediaEngagementBypassAutoplayPolicies,PreloadMediaEngagementData";
+static const wchar_t* kHardenedArgs = 
+    L"--no-default-browser-check "
+    L"--disable-features=DefaultBrowserPromptRefresh2024,DefaultBrowserPromptSurfaces,DefaultBrowserFramework,SeparateDefaultAndPinPrompt,TaskbarPinningPromo,MediaEngagementBypassAutoplayPolicies,PreloadMediaEngagementData "
+    L"--no-pings "
+    L"--disable-search-engine-choice-screen "
+    L"--disable-breakpad "
+    L"--disable-domain-reliability";
 
 static const wchar_t* kGamingArgs = 
     L"--disable-frame-rate-limit "
@@ -18,7 +24,7 @@ static const wchar_t* kGamingArgs =
     L"--enable-oop-rasterization "
     L"--num-raster-threads=4 "
     L"--disable-renderer-backgrounding "
-    L"--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,MediaEngagementBypassAutoplayPolicies,PreloadMediaEngagementData "
+    L"--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,DefaultBrowserPromptRefresh2024,DefaultBrowserPromptSurfaces,DefaultBrowserFramework,SeparateDefaultAndPinPrompt,TaskbarPinningPromo,MediaEngagementBypassAutoplayPolicies,PreloadMediaEngagementData "
     L"--no-default-browser-check "
     L"--no-pings "
     L"--disable-breakpad "
@@ -119,26 +125,38 @@ std::vector<std::wstring> ShortcutManager::FindBrowserShortcuts(const BrowserTar
         CSIDL_COMMON_PROGRAMS
     };
 
+    std::vector<std::wstring> scanPaths;
     for (int csidl : csidls) {
         wchar_t path[MAX_PATH] = { 0 };
         if (SHGetFolderPathW(NULL, csidl, NULL, 0, path) == S_OK) {
-            ScanDirectoryForShortcuts(path, exeName, results);
+            scanPaths.push_back(path);
         }
     }
 
-    // Check TaskBar pinned shortcuts
+    scanPaths.push_back(L"C:\\Users\\Public\\Desktop");
+    scanPaths.push_back(L"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs");
+
+    // Check TaskBar pinned shortcuts & Quick Launch
     wchar_t appData[MAX_PATH] = { 0 };
     if (SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData) == S_OK) {
-        std::wstring tb = std::wstring(appData) + L"\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar";
-        ScanDirectoryForShortcuts(tb, exeName, results);
+        scanPaths.push_back(std::wstring(appData) + L"\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar");
+        scanPaths.push_back(std::wstring(appData) + L"\\Microsoft\\Internet Explorer\\Quick Launch");
     }
+
+    for (const auto& sp : scanPaths) {
+        ScanDirectoryForShortcuts(sp, exeName, results);
+    }
+
+    // Deduplicate results
+    std::sort(results.begin(), results.end());
+    results.erase(std::unique(results.begin(), results.end()), results.end());
 
     return results;
 }
 
 bool ShortcutManager::HardenShortcuts(const BrowserTarget& browser, EngineLogCallback logCb) {
     CoInitialize(NULL);
-    logCb(L"Scanning desktop and Start Menu for " + browser.name + L" shortcuts...", L"INFO");
+    logCb(L"Scanning desktop, Start Menu and Taskbar for " + browser.name + L" shortcuts...", L"INFO");
     auto shortcuts = FindBrowserShortcuts(browser);
     logCb(L"Found " + std::to_wstring(shortcuts.size()) + L" shortcut candidate(s).", L"INFO");
 
@@ -160,19 +178,24 @@ bool ShortcutManager::HardenShortcuts(const BrowserTarget& browser, EngineLogCal
                 SetFileAttributesW(lnk.c_str(), attrs & ~FILE_ATTRIBUTE_READONLY);
             }
 
-            if (SUCCEEDED(ppf->Load(lnk.c_str(), STGM_READ))) {
+            if (SUCCEEDED(ppf->Load(lnk.c_str(), STGM_READWRITE)) || SUCCEEDED(ppf->Load(lnk.c_str(), STGM_READ))) {
                 wchar_t args[2048] = { 0 };
                 psl->GetArguments(args, 2048);
 
                 std::wstring argsStr = args;
-                if (argsStr.find(L"--no-pings") == std::wstring::npos) {
+                bool needsUpdate = false;
+                if (argsStr.find(L"--no-default-browser-check") == std::wstring::npos) needsUpdate = true;
+                if (argsStr.find(L"DefaultBrowserPromptRefresh2024") == std::wstring::npos) needsUpdate = true;
+                if (argsStr.find(L"--no-pings") == std::wstring::npos) needsUpdate = true;
+
+                if (needsUpdate) {
                     if (!argsStr.empty()) argsStr += L" ";
                     argsStr += kHardenedArgs;
 
                     psl->SetArguments(argsStr.c_str());
                     if (SUCCEEDED(ppf->Save(lnk.c_str(), TRUE))) {
                         modified++;
-                        logCb(L"  [✓] Injected privacy flags into: " + lnk, L"INFO");
+                        logCb(L"  [✓] Injected anti-prompt & privacy flags into: " + lnk, L"INFO");
                     }
                 }
             }
@@ -181,7 +204,7 @@ bool ShortcutManager::HardenShortcuts(const BrowserTarget& browser, EngineLogCal
         psl->Release();
     }
 
-    logCb(L"[✓] Shortcut hardening complete: " + std::to_wstring(modified) + L" shortcuts updated with startup privacy flags.", L"SUCCESS");
+    logCb(L"[✓] Shortcut hardening complete: " + std::to_wstring(modified) + L" shortcuts updated with startup anti-prompt flags.", L"SUCCESS");
     return true;
 }
 
@@ -383,56 +406,11 @@ bool ShortcutManager::InstallGamingMode(const BrowserTarget& browser, EngineLogC
     TweakEngine::WriteDualRegDword(p, L"NetworkPredictionOptions", 2); // Disable prefetching for lowest ping
     TweakEngine::WriteDualRegDword(p, L"BackgroundModeEnabled", 0); // No background apps when closed
     TweakEngine::WriteDualRegDword(p, L"HighEfficiencyModeEnabled", 1); // Aggressive tab sleeping
-    TweakEngine::WriteDualRegDword(p, L"DefaultBrowserSettingEnabled", 0); // Silence default check
-    TweakEngine::WriteDualRegDword(p, L"HideFirstRunExperience", 1); // Silence first run splash
-    TweakEngine::WriteDualRegDword(p, L"PromotionsEnabled", 0);
     TweakEngine::WriteDualRegDword(p, L"SearchEngineChoiceScreenNavigationCondition", 0);
     logCb(L"  [✓] Enforced Gaming Policies: 4-Renderer clamp, 100MB cache, zero-latency network prediction & no background apps.", L"INFO");
 
-    // 6. Touch First Run Marker
-    if (PathExists(browser.userDataDir)) {
-        std::wstring frPath = browser.userDataDir + L"\\First Run";
-        if (!PathExists(frPath)) {
-            std::ofstream fr(frPath, std::ios::binary);
-            if (fr.is_open()) fr.close();
-            logCb(L"  [✓] First Run marker created (silences onboarding & pin promos).", L"INFO");
-        }
-
-        // 7. Preferences JSON Patching
-        std::wstring prefPath = browser.userDataDir + L"\\Default\\Preferences";
-        if (PathExists(prefPath)) {
-            std::ifstream in(prefPath, std::ios::binary);
-            if (in.is_open()) {
-                std::stringstream ss;
-                ss << in.rdbuf();
-                in.close();
-                std::string s = ss.str();
-                bool changed = false;
-
-                auto replaceAll = [&](const std::string& from, const std::string& to) {
-                    size_t pos = 0;
-                    while ((pos = s.find(from, pos)) != std::string::npos) {
-                        s.replace(pos, from.length(), to);
-                        pos += to.length();
-                        changed = true;
-                    }
-                };
-
-                replaceAll("\"check_default_browser\":true", "\"check_default_browser\":false");
-                replaceAll("\"has_seen_welcome_page\":false", "\"has_seen_welcome_page\":true");
-                replaceAll("\"taskbar_pinning_promo_dismissed\":false", "\"taskbar_pinning_promo_dismissed\":true");
-
-                if (changed) {
-                    std::ofstream out(prefPath, std::ios::binary | std::ios::trunc);
-                    if (out.is_open()) {
-                        out << s;
-                        out.close();
-                        logCb(L"  [✓] Profile preferences patched for gaming: default nag & promos dismissed.", L"INFO");
-                    }
-                }
-            }
-        }
-    }
+    // 6. Permanently extinguish all default browser & taskbar pin nags across all 4 layers
+    TweakEngine::PermanentlySilenceDefaultAndPinPrompts(browser, logCb);
 
     logCb(L"[✓] Chrome Gaming Mode installed and active! Double-click '" + lnkFileName + L"' or '" + batFileName + L"' on Desktop to game.", L"SUCCESS");
     return true;

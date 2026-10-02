@@ -1,16 +1,18 @@
-# ChromeDebloater Pro (v3.4)
+# ChromeDebloater Pro (v3.5)
 
 **Next-generation, ultra-lightweight Windows C++ software to harden, debloat, and optimize Chromium-based browsers without AI.**
 
 Supports: **Google Chrome**, **Brave Browser**, **Microsoft Edge** (All versions & channels)
 
-![ChromeDebloater Pro UI](assets/ui_preview.jpg)
+![ChromeDebloater Pro UI](assets/ui.png)
 
 ---
 
 ## What Makes ChromeDebloater Pro Different?
 
-- 🎨 **Redesigned Modern Dark UI (1120×740)**: Custom double-buffered GDI+ rendering engine with 7 dedicated pages, real-time metric cards, smooth rounded toggles, status pills, and live execution streaming.
+- 🎨 **Expanded Modern Dark UI (1260×820)**: High-resolution custom double-buffered GDI+ rendering engine featuring a 270° circular Health Score ring gauge, real-time metric cards, smooth rounded buttons, status pills, and live execution streaming across 7 dedicated navigation pages.
+- 🎮 **Chrome Gaming Mode (Low-Latency & High-FPS)**: Specialized mode built for gamers and low-spec systems: kills background instances, unlocks FPS cap (`--disable-frame-rate-limit`), eliminates VSync latency (`--disable-gpu-vsync`), disables background timer throttling (`--disable-background-timer-throttling`), injects zero-copy rasterization, forces 4 raster threads, caps disk cache to 100MB, and creates dedicated Desktop `.lnk` and instant-kill `.bat` launchers.
+- 🚫 **Universal Default & Pinned Browser Nag Fix**: Permanently eliminates Chrome's persistent default browser prompts and taskbar pin nagging on new Windows setups across all users via dual HKLM/HKCU policies (`DefaultBrowserSettingEnabled=0`, `HideFirstRunExperience=1`), touching `First Run` sentinels, and patching JSON preferences (`suppress_first_run_default_browser_prompt=true`).
 - 🛡🔥 **Kernel-Level Network Shield (Firewall & Hosts)**: Direct outbound blocking of 48 Google, Edge, and Brave telemetry, crashpad crash dumps, and analytics domains via Windows hosts sinkhole (`0.0.0.0`) and 16 Windows Defender Firewall outbound rules.
 - 🦁 **Brave Browser Deep Debloat**: Purges Brave Rewards (BAT), Brave Crypto Wallet, Leo AI chat assistant (`BraveAIChatEnabled=0`), Brave VPN (`BraveVPNDisabled=1`), IPFS daemon (`IPFSResolveMethod=0`), P3A telemetry, sponsored New Tab Page background images, and Brave Today news feed.
 - 🌀 **Microsoft Edge Deep Debloat**: Disables Edge Copilot / Bing Hubs sidebar (`HubsSidebarEnabled=0`), Edge Shopping / Coupons, Edge Wallet, Math Solver, Citations, Super Resolution, Typosquatting URL telemetry, 24/7 background Startup Boost (`StartupBoostEnabled=0`), and MSN New Tab Page news feed.
@@ -20,9 +22,9 @@ Supports: **Google Chrome**, **Brave Browser**, **Microsoft Edge** (All versions
 - 🔍 **12-Subsystem Live System Audit Engine**: Automatically inspects browser registry configurations across machine (`HKLM`) and user (`HKCU`) hives, Local State flags, on-disk model caches, and Network Shield status to calculate your **Hardening & Optimization Score (0% – 100%)**.
 - 💾 **1-Click Snapshot & Rollback**: Automatically takes a timestamped registry backup before applying changes. Restore to any previous point or reset all policies to factory defaults with one click.
 - 🧹 **Deep Profile Cleaner**: Compacts and defragments SQLite databases (`History`, `Favicons`, `Web Data`) via Windows built-in `winsqlite3.dll`, sweeps stale GPU/shader caches, purges on-device AI models and service worker caches, and flushes Windows DNS cache.
-- ⚡ **Pure Native Windows Binary**: Only **~350 KB**. Single standalone portable executable. Zero runtime dependencies (no Python, no Node, no Qt, no Electron).
+- ⚡ **Pure Native Windows Binary**: Only **~400 KB**. Single standalone portable executable. Zero runtime dependencies (no Python, no Node, no Qt, no Electron).
 - 🛡 **Native UAC Elevation**: Embedded `requireAdministrator` manifest ensures seamless administrator privilege handling.
-- 🖥 **Dual-Mode (GUI + Headless CLI)**: Double-click to launch the graphical dashboard, or run headlessly via terminal / scripts with `--all`, `--shield`, `--low-resource`, `--check-updates`, `--audit`, or `--clean`.
+- 🖥 **Dual-Mode (GUI + Headless CLI)**: Double-click to launch the graphical dashboard, or run headlessly via terminal / scripts with `--gaming`, `--all`, `--shield`, `--low-resource`, `--shortcuts`, `--check-updates`, `--audit`, or `--clean`.
 
 ---
 
@@ -66,6 +68,13 @@ Supports: **Google Chrome**, **Brave Browser**, **Microsoft Edge** (All versions
 ## Command-Line / Scripting Usage
 
 ```cmd
+:: Install Chrome Gaming Mode (batch script + desktop shortcut + low-latency flags)
+ChromeDebloater.exe --gaming
+:: or: ChromeDebloater.exe -g
+
+:: Optimize all existing browser shortcuts (Desktop, Start Menu, Taskbar, Quick Launch)
+ChromeDebloater.exe --shortcuts
+
 :: Activate full Windows Network Shield (Firewall + Hosts block)
 ChromeDebloater.exe --shield
 

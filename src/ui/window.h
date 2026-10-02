@@ -10,6 +10,7 @@
 #include "../engine/backup_engine.h"
 #include "../engine/update_checker.h"
 #include "../engine/network_shield.h"
+#include "../engine/shortcut_manager.h"
 
 #define WM_APP_ENGINE_LOG      (WM_APP + 10)
 #define WM_APP_ENGINE_PROG     (WM_APP + 11)
@@ -35,12 +36,14 @@ private:
 
     // GDI+ Resources
     ULONG_PTR m_gdiToken = 0;
+    Gdiplus::Font* m_fMainTitle = nullptr;
     Gdiplus::Font* m_fTitle = nullptr;
     Gdiplus::Font* m_fSubtitle = nullptr;
     Gdiplus::Font* m_fNormal = nullptr;
     Gdiplus::Font* m_fBold = nullptr;
     Gdiplus::Font* m_fSmall = nullptr;
     Gdiplus::Font* m_fScore = nullptr;
+    Gdiplus::Font* m_fHuge = nullptr;
     Gdiplus::Font* m_fConsole = nullptr;
 
     // State
@@ -87,6 +90,7 @@ private:
     void RunToggleAllShieldAsync(bool enable);
     void RunToggleUpdateLockAsync(int browserIdx, bool lock);
     void RunApplyTweaksAsync();
+    void RunInstallGamingModeAsync();
     void RunDeepCleanAsync();
     void RunCreateBackupAsync();
     void RunRestoreBackupAsync(const std::wstring& path);

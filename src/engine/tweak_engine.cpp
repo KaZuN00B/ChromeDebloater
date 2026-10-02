@@ -109,6 +109,10 @@ void TweakEngine::ApplyPreset(std::vector<TweakItem>& tweaks, TweakPreset preset
             case TweakPreset::UltraLowResource:
                 tw.enabled = (tw.id == 5 || tw.id == 6 || tw.id == 7 || tw.id == 10 || tw.id == 12 || tw.id == 14 || tw.id == 15);
                 break;
+            case TweakPreset::GamingMode:
+                // Focus on max frame rate, GPU acceleration, 4-renderer clamp, 100MB cache, network shield, no telemetry
+                tw.enabled = (tw.id == 4 || tw.id == 5 || tw.id == 6 || tw.id == 7 || tw.id == 8 || tw.id == 10 || tw.id == 12 || tw.id == 14 || tw.id == 15);
+                break;
         }
     }
 }
@@ -648,48 +652,59 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"LensRegionSearchEnabled", 0);
                 WriteDualRegDword(p, L"SideSearchEnabled", 0);
 
-                // Edge UI & Clickbait News
-                WriteDualRegDword(p, L"NewTabPageContentEnabled", 0);
-                WriteDualRegDword(p, L"NewTabPagePrerenderEnabled", 0);
-                WriteDualRegDword(p, L"WebWidgetAllowed", 0);
-                WriteDualRegDword(p, L"EdgeWorkspacesEnabled", 0);
-                WriteDualRegDword(p, L"ShowRecommendationsEnabled", 0);
+                // Universal Chrome/Brave/Edge: Suppress Default Browser checks & First-Run Welcome
+                WriteDualRegDword(p, L"DefaultBrowserSettingEnabled", 0);
                 WriteDualRegDword(p, L"HideFirstRunExperience", 1);
-                WriteDualRegDword(p, L"ShowMicrosoftEdgeLogoActive", 0);
+                WriteDualRegDword(p, L"PromotionsEnabled", 0);
 
-                // Brave Preferences JSON Patching (NTP sponsored images & news)
-                if (browser.id == L"brave") {
-                    std::wstring prefPath = browser.userDataDir + L"\\Default\\Preferences";
-                    if (PathExists(prefPath)) {
-                        std::ifstream in(prefPath, std::ios::binary);
-                        if (in.is_open()) {
-                            std::stringstream ss;
-                            ss << in.rdbuf();
-                            in.close();
-                            std::string prefStr = ss.str();
-                            bool changed = false;
+                // Create First Run file marker to permanently silence onboarding and default browser dialogs
+                std::wstring firstRunFile = browser.userDataDir + L"\\First Run";
+                if (!PathExists(firstRunFile) && PathExists(browser.userDataDir)) {
+                    std::ofstream fr(firstRunFile, std::ios::binary | std::ios::out);
+                    if (fr.is_open()) {
+                        fr.close();
+                        logCb(L"  [✓] First Run marker created (permanently silences default browser & welcome popups).", L"INFO");
+                    }
+                }
 
-                            auto replaceAll = [&](const std::string& from, const std::string& to) {
-                                size_t pos = 0;
-                                while ((pos = prefStr.find(from, pos)) != std::string::npos) {
-                                    prefStr.replace(pos, from.length(), to);
-                                    pos += to.length();
-                                    changed = true;
-                                }
-                            };
+                // Preferences JSON Patching (Default browser & Taskbar Pin Promo for all browsers)
+                std::wstring prefPath = browser.userDataDir + L"\\Default\\Preferences";
+                if (PathExists(prefPath)) {
+                    std::ifstream in(prefPath, std::ios::binary);
+                    if (in.is_open()) {
+                        std::stringstream ss;
+                        ss << in.rdbuf();
+                        in.close();
+                        std::string prefStr = ss.str();
+                        bool changed = false;
 
+                        auto replaceAll = [&](const std::string& from, const std::string& to) {
+                            size_t pos = 0;
+                            while ((pos = prefStr.find(from, pos)) != std::string::npos) {
+                                prefStr.replace(pos, from.length(), to);
+                                pos += to.length();
+                                changed = true;
+                            }
+                        };
+
+                        // Silence default browser check & taskbar pin promo
+                        replaceAll("\"check_default_browser\":true", "\"check_default_browser\":false");
+                        replaceAll("\"has_seen_welcome_page\":false", "\"has_seen_welcome_page\":true");
+                        replaceAll("\"taskbar_pinning_promo_dismissed\":false", "\"taskbar_pinning_promo_dismissed\":true");
+
+                        if (browser.id == L"brave") {
                             replaceAll("\"show_sponsored_images\":true", "\"show_sponsored_images\":false");
                             replaceAll("\"should_show_on_new_tab\":true", "\"should_show_on_new_tab\":false");
                             replaceAll("\"show_brave_talk\":true", "\"show_brave_talk\":false");
                             replaceAll("\"show_together\":true", "\"show_together\":false");
+                        }
 
-                            if (changed) {
-                                std::ofstream out(prefPath, std::ios::binary | std::ios::trunc);
-                                if (out.is_open()) {
-                                    out << prefStr;
-                                    out.close();
-                                    logCb(L"  [✓] Brave NTP sponsored images and Brave Today news disabled in profile.", L"INFO");
-                                }
+                        if (changed) {
+                            std::ofstream out(prefPath, std::ios::binary | std::ios::trunc);
+                            if (out.is_open()) {
+                                out << prefStr;
+                                out.close();
+                                logCb(L"  [✓] Default browser nag & taskbar pin promos silenced in profile preferences.", L"INFO");
                             }
                         }
                     }
@@ -703,6 +718,7 @@ bool TweakEngine::ExecuteTweaks(
                 progCb(pct, L"Configuring private Brave Search provider...");
 
                 WriteDualRegDword(p, L"DefaultSearchProviderEnabled", 1);
+                WriteDualRegDword(p, L"SearchEngineChoiceScreenNavigationCondition", 0);
                 WriteDualRegString(p, L"DefaultSearchProviderName", L"Brave Search");
                 WriteDualRegString(p, L"DefaultSearchProviderSearchURL", L"https://search.brave.com/search?q={searchTerms}");
                 WriteDualRegString(p, L"DefaultSearchProviderSuggestURL", L"https://search.brave.com/api/suggest?q={searchTerms}");
@@ -787,8 +803,11 @@ bool TweakEngine::ExecuteTweaks(
                 WriteDualRegDword(p, L"BrowserGuestModeEnabled", 0);
                 WriteDualRegDword(p, L"PromotionsEnabled", 0);
                 WriteDualRegDword(p, L"SuppressUnsupportedOSWarning", 1);
+                WriteDualRegDword(p, L"SearchEngineChoiceScreenNavigationCondition", 0);
+                WriteDualRegDword(p, L"DefaultBrowserSettingEnabled", 0);
+                WriteDualRegDword(p, L"HideFirstRunExperience", 1);
 
-                // Inject Local State flags: disable tab search & disable tab hover cards
+                // Inject Local State flags: disable tab search & disable tab hover cards & pin promo
                 std::wstring lsPath = browser.userDataDir + L"\\Local State";
                 if (PathExists(lsPath)) {
                     std::ifstream in(lsPath, std::ios::binary);
@@ -801,7 +820,8 @@ bool TweakEngine::ExecuteTweaks(
 
                         std::vector<std::string> zenFlags = {
                             "enable-tab-search@0",
-                            "tab-hover-card-images@0"
+                            "tab-hover-card-images@0",
+                            "taskbar-pin-promo@2"
                         };
 
                         size_t pos = c.find("\"enabled_labs_experiments\"");

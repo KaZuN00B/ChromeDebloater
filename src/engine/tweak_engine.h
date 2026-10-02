@@ -11,7 +11,8 @@ enum class TweakPreset {
     Maximum,         // All 15 optimizations & security modules
     Balanced,        // Everyday fast, privacy & low resource
     PrivacyOnly,     // Anti-telemetry, Network Shield & DoH focus
-    UltraLowResource // Max RAM savings, renderer limits, cache clamps & tab sleep
+    UltraLowResource,// Max RAM savings, renderer limits, cache clamps & tab sleep
+    GamingMode       // Unlocked FPS, zero VSync, GPU raster, low RAM clamp
 };
 
 struct TweakItem {

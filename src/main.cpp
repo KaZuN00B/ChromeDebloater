@@ -10,6 +10,7 @@
 #include "engine/backup_engine.h"
 #include "engine/update_checker.h"
 #include "engine/network_shield.h"
+#include "engine/shortcut_manager.h"
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -94,6 +95,10 @@ int RunCliMode(int argc, wchar_t** argv) {
     bool disableHosts = false;
     bool enableFw = false;
     bool disableFw = false;
+    bool hardenShortcuts = false;
+    bool restoreShortcuts = false;
+    bool launchSanitized = false;
+    bool installGaming = false;
 
     for (int i = 1; i < argc; ++i) {
         std::wstring arg = argv[i];
@@ -101,6 +106,8 @@ int RunCliMode(int argc, wchar_t** argv) {
             runAll = true;
         } else if (arg == L"--low-resource" || arg == L"-l" || arg == L"--low") {
             runLowResource = true;
+        } else if (arg == L"--gaming" || arg == L"-g" || arg == L"--install-gaming-mode" || arg == L"--game") {
+            installGaming = true;
         } else if (arg == L"--audit") {
             runAudit = true;
         } else if (arg == L"--clean" || arg == L"-c") {
@@ -123,19 +130,29 @@ int RunCliMode(int argc, wchar_t** argv) {
             enableFw = true;
         } else if (arg == L"--unfirewall") {
             disableFw = true;
+        } else if (arg == L"--shortcuts" || arg == L"--harden-shortcuts") {
+            hardenShortcuts = true;
+        } else if (arg == L"--restore-shortcuts" || arg == L"--unshortcuts") {
+            restoreShortcuts = true;
+        } else if (arg == L"--sanitized" || arg == L"--ephemeral") {
+            launchSanitized = true;
         } else if ((arg == L"--browser" || arg == L"-b") && (i + 1 < argc)) {
             targetKey = argv[++i];
         } else if (arg == L"--help" || arg == L"-h" || arg == L"/?") {
             PrintConsole(L"Usage: ChromeDebloater.exe [options]\n\n");
             PrintConsole(L"Options:\n");
             PrintConsole(L"  --all, -a                 Apply all 15 hardening and debloat modules\n");
+            PrintConsole(L"  --gaming, -g              Install Hardened Ultra Gaming Mode (unlocked FPS, zero VSync & low-RAM launcher)\n");
+            PrintConsole(L"  --low-resource, -l        Apply Ultra Low-Resource profile (RAM clamp & renderer limit)\n");
             PrintConsole(L"  --shield, -s              Activate Network Shield (Windows Firewall + Hosts file block)\n");
             PrintConsole(L"  --unshield                Deactivate Network Shield (removes rules and restores hosts)\n");
             PrintConsole(L"  --hosts                   Block Google telemetry & tracking domains via hosts file\n");
             PrintConsole(L"  --unhosts                 Remove Google telemetry entries from hosts file\n");
             PrintConsole(L"  --firewall                Add Windows Defender Firewall outbound rules for updaters\n");
             PrintConsole(L"  --unfirewall              Delete ChromeDebloater Windows Firewall rules\n");
-            PrintConsole(L"  --low-resource, -l        Apply Ultra Low-Resource profile (RAM clamp & renderer limit)\n");
+            PrintConsole(L"  --shortcuts               Inject privacy & declutter startup arguments into browser shortcuts\n");
+            PrintConsole(L"  --restore-shortcuts       Revert browser shortcuts to default launch configuration\n");
+            PrintConsole(L"  --sanitized               Launch ephemeral isolated session in %TEMP% (zero telemetry)\n");
             PrintConsole(L"  --audit                   Run system audit and display hardening score\n");
             PrintConsole(L"  --clean, -c               Perform deep profile SQLite vacuum and cache sweep\n");
             PrintConsole(L"  --check-updates, -u       Check upstream release channels for Chrome, Brave, and Edge\n");
@@ -223,6 +240,30 @@ int RunCliMode(int argc, wchar_t** argv) {
         return 0;
     }
 
+    if (hardenShortcuts) {
+        PrintConsole(L"[*] Injecting privacy and declutter flags into " + pTarget->name + L" shortcuts...\n");
+        ShortcutManager::HardenShortcuts(*pTarget, logPrinter);
+        return 0;
+    }
+
+    if (restoreShortcuts) {
+        PrintConsole(L"[*] Reverting " + pTarget->name + L" shortcuts to default...\n");
+        ShortcutManager::RestoreShortcuts(*pTarget, logPrinter);
+        return 0;
+    }
+
+    if (launchSanitized) {
+        ShortcutManager::LaunchSanitizedProfile(*pTarget, logPrinter);
+        return 0;
+    }
+
+    if (installGaming) {
+        PrintConsole(L"[*] Installing Hardened Ultra Gaming Mode for " + pTarget->name + L"...\n");
+        ShortcutManager::InstallGamingMode(*pTarget, logPrinter);
+        PrintConsole(L"[✓] Gaming Mode installation completed successfully.\n\n");
+        return 0;
+    }
+
     if (lockUpdates) {
         PrintConsole(L"[*] Enforcing 4-layer update lockdown for " + pTarget->name + L"...\n");
         std::vector<int> ids = { 13 };
@@ -299,29 +340,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (argc > 1) {
+        bool needElevation = true;
         for (int i = 1; i < argc; ++i) {
             std::wstring arg = argv[i];
-            if (arg == L"--all" || arg == L"-a" || arg == L"--low-resource" || arg == L"-l" || arg == L"--low" ||
-                arg == L"--audit" || arg == L"--clean" || arg == L"-c" || arg == L"--check-updates" || arg == L"-u" ||
-                arg == L"--updates" || arg == L"--lock-updates" || arg == L"--unlock-updates" ||
-                arg == L"--shield" || arg == L"-s" || arg == L"--unshield" || arg == L"--hosts" || arg == L"--unhosts" ||
-                arg == L"--firewall" || arg == L"--unfirewall" ||
-                arg == L"--help" || arg == L"-h" || arg == L"/?") {
-                
-                if ((arg == L"--all" || arg == L"-a" || arg == L"--low-resource" || arg == L"-l" ||
-                     arg == L"--clean" || arg == L"-c" || arg == L"--lock-updates" || arg == L"--unlock-updates" ||
-                     arg == L"--shield" || arg == L"-s" || arg == L"--unshield" || arg == L"--hosts" || arg == L"--unhosts" ||
-                     arg == L"--firewall" || arg == L"--unfirewall") && !IsProcessElevated()) {
-                    if (RelaunchAsAdmin(pCmdLine)) {
-                        LocalFree(argv);
-                        return 0;
-                    }
-                }
-                int res = RunCliMode(argc, argv);
-                LocalFree(argv);
-                return res;
+            if (arg == L"--help" || arg == L"-h" || arg == L"/?" || arg == L"--audit" || arg == L"--check-updates" || arg == L"-u") {
+                needElevation = false;
+                break;
             }
         }
+        if (needElevation && !IsProcessElevated()) {
+            if (RelaunchAsAdmin(pCmdLine)) {
+                LocalFree(argv);
+                return 0;
+            }
+        }
+        int res = RunCliMode(argc, argv);
+        LocalFree(argv);
+        return res;
     }
     if (argv) LocalFree(argv);
 

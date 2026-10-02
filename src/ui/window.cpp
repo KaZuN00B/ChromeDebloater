@@ -24,15 +24,15 @@ bool AppWindow::InitializeAndShow(HINSTANCE hInstance, int nCmdShow) {
 
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int winW = 1120;
-    int winH = 740;
+    int winW = 1260;
+    int winH = 820;
     int winX = (screenW - winW) / 2;
     int winY = (screenH - winH) / 2;
 
     HWND hwnd = CreateWindowExW(
         0,
         wc.lpszClassName,
-        L"ChromeDebloater Pro — Native Chromium Hardening & Network Shield",
+        L"ChromeDebloater Pro",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         winX, winY, winW, winH,
         NULL, NULL, hInstance, NULL
@@ -188,19 +188,21 @@ void AppWindow::OnInit(HWND hwnd) {
     GdiplusStartupInput gdiInput;
     GdiplusStartup(&m_gdiToken, &gdiInput, NULL);
 
+    m_fMainTitle = new Font(L"Segoe UI", 26.0f, FontStyleBold, UnitPixel);
     m_fTitle = new Font(L"Segoe UI", 16.0f, FontStyleBold, UnitPixel);
     m_fSubtitle = new Font(L"Segoe UI", 12.0f, FontStyleRegular, UnitPixel);
     m_fNormal = new Font(L"Segoe UI", 13.0f, FontStyleRegular, UnitPixel);
     m_fBold = new Font(L"Segoe UI", 13.0f, FontStyleBold, UnitPixel);
     m_fSmall = new Font(L"Segoe UI", 11.0f, FontStyleRegular, UnitPixel);
-    m_fScore = new Font(L"Segoe UI", 26.0f, FontStyleBold, UnitPixel);
+    m_fScore = new Font(L"Segoe UI", 32.0f, FontStyleBold, UnitPixel);
+    m_fHuge = new Font(L"Segoe UI", 28.0f, FontStyleBold, UnitPixel);
     m_fConsole = new Font(L"Consolas", 12.0f, FontStyleRegular, UnitPixel);
 
     m_browsers = DetectAllBrowsers();
     m_tweaks = TweakEngine::GetAllTweaks();
     m_snapshots = BackupEngine::ListSnapshots();
 
-    AddLog(L"ChromeDebloater Pro Native v3.4 started.", L"INFO");
+    AddLog(L"ChromeDebloater Pro Native v3.5 started.", L"INFO");
     AddLog(L"Universal Chromium Compatibility & Windows Network Shield Initialized.", L"INFO");
 
     RunAuditAsync();
@@ -209,12 +211,14 @@ void AppWindow::OnInit(HWND hwnd) {
 }
 
 void AppWindow::OnDestroy() {
+    delete m_fMainTitle;
     delete m_fTitle;
     delete m_fSubtitle;
     delete m_fNormal;
     delete m_fBold;
     delete m_fSmall;
     delete m_fScore;
+    delete m_fHuge;
     delete m_fConsole;
 
     if (m_gdiToken) {
@@ -289,70 +293,73 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
     Pen divPen(Theme::BorderSubtle, 1.0f);
     g.DrawLine(&divPen, rect.Width, 0.0f, rect.Width, rect.Height);
 
-    // Header
+    // Header matching ui.png: "Shield" title + version + green pill badge
     SolidBrush titleBrush(Theme::TextPrimary);
-    g.DrawString(L"🛡 ChromeDebloater", -1, m_fTitle, PointF(20.0f, 18.0f), &titleBrush);
+    g.DrawString(L"🛡 Shield", -1, m_fTitle, PointF(22.0f, 20.0f), &titleBrush);
 
     SolidBrush verBrush(Theme::TextMuted);
-    g.DrawString(L"v3.4 Pro · Shield & Optimizer", -1, m_fSmall, PointF(22.0f, 42.0f), &verBrush);
+    g.DrawString(L"ChromeDebloater v3.5 Pro", -1, m_fSmall, PointF(24.0f, 44.0f), &verBrush);
 
-    RectF adminBadge(20.0f, 64.0f, 134.0f, 22.0f);
-    RenderUtils::DrawBadge(g, adminBadge, L"●  ADMIN ELEVATED", Theme::SuccessBadge, Theme::SuccessGreen, m_fSmall);
+    RectF adminBadge(22.0f, 68.0f, 136.0f, 22.0f);
+    RenderUtils::DrawBadge(g, adminBadge, L"ADMINISTRATOR", Color(255, 16, 50, 35), Color(255, 16, 185, 129), m_fSmall);
 
-    // Browser Target Selector
-    RectF browCard(16.0f, 98.0f, rect.Width - 32.0f, 76.0f);
-    RenderUtils::DrawCard(g, browCard, Theme::BgCard, Theme::BorderSubtle, 6.0f);
+    // Browser Target Selector (Segmented pills)
+    RectF browCard(16.0f, 102.0f, rect.Width - 32.0f, 44.0f);
+    RenderUtils::DrawCard(g, browCard, Theme::BgCard, Theme::BorderSubtle, 8.0f);
 
-    SolidBrush lblBrush(Theme::TextMuted);
-    g.DrawString(L"TARGET BROWSER", -1, m_fSmall, PointF(browCard.X + 12.0f, browCard.Y + 8.0f), &lblBrush);
-
-    float btnW = (browCard.Width - 24.0f) / 3.0f;
+    float btnW = (browCard.Width - 8.0f) / 3.0f;
     const wchar_t* bNames[] = { L"Chrome", L"Brave", L"Edge" };
     for (int i = 0; i < 3; ++i) {
-        RectF bPill(browCard.X + 12.0f + i * btnW, browCard.Y + 28.0f, btnW - 4.0f, 32.0f);
+        RectF bPill(browCard.X + 4.0f + i * btnW, browCard.Y + 4.0f, btnW - 2.0f, 36.0f);
         bool isSel = (m_selectedBrowserIdx == i);
-        Color pillBg = isSel ? Theme::AccentBlue : Theme::BgCardHover;
+        Color pillBg = isSel ? Color(255, 30, 41, 59) : Color(0, 0, 0, 0);
         Color pillTxt = isSel ? Color(255, 255, 255, 255) : Theme::TextSecondary;
 
-        SolidBrush pillBrush(pillBg);
-        RenderUtils::FillRoundedRect(g, pillBrush, bPill, 4.0f);
+        if (isSel) {
+            SolidBrush pillBrush(pillBg);
+            RenderUtils::FillRoundedRect(g, pillBrush, bPill, 6.0f);
+        }
 
         SolidBrush pillTxtBrush(pillTxt);
         StringFormat sf;
         sf.SetAlignment(StringAlignmentCenter);
         sf.SetLineAlignment(StringAlignmentCenter);
-        g.DrawString(bNames[i], -1, m_fSmall, bPill, &sf, &pillTxtBrush);
+        g.DrawString(bNames[i], -1, isSel ? m_fBold : m_fSmall, bPill, &sf, &pillTxtBrush);
     }
 
-    // Navigation Items (7 items)
-    float navY = 188.0f;
-    float navH = 36.0f;
-    const wchar_t* navLabels[] = {
-        L"📊  Dashboard",
-        L"⚡  Optimizations",
-        L"🛡  Network Shield",
-        L"🧹  Deep Cleaner",
-        L"🌐  Browser Updates",
-        L"🔄  Backups & Restore",
-        L"📜  Activity Console"
+    // Navigation Items (Exact order in ui.png)
+    struct NavEntry {
+        NavPage page;
+        const wchar_t* label;
+    };
+    const NavEntry navEntries[] = {
+        { NavPage::Dashboard, L"田  Dashboard" },
+        { NavPage::Tweaks,    L"⚙  Optimizations" },
+        { NavPage::Cleaner,   L"🧹  Deep Cleaner" },
+        { NavPage::Shield,    L"🛡  Network Shield" },
+        { NavPage::Updates,   L"🌐  Browser Updates" },
+        { NavPage::Backups,   L"🕒  Backups & Restore" },
+        { NavPage::Logs,      L">_  Activity Console" }
     };
 
+    float navY = 166.0f;
+    float navH = 38.0f;
     for (int i = 0; i < 7; ++i) {
-        RectF navItem(16.0f, navY + i * (navH + 5.0f), rect.Width - 32.0f, navH);
-        bool isActive = ((int)m_currentPage == i);
+        RectF navItem(16.0f, navY + i * (navH + 6.0f), rect.Width - 32.0f, navH);
+        bool isActive = (m_currentPage == navEntries[i].page);
 
         if (isActive) {
             SolidBrush activeBrush(Color(255, 26, 35, 50));
             RenderUtils::FillRoundedRect(g, activeBrush, navItem, 6.0f);
             SolidBrush barBrush(Theme::AccentBlue);
-            g.FillRectangle(&barBrush, navItem.X, navItem.Y + 8.0f, 3.0f, navItem.Height - 16.0f);
+            g.FillRectangle(&barBrush, navItem.X, navItem.Y + 6.0f, 3.5f, navItem.Height - 12.0f);
         }
 
         SolidBrush itemTxt(isActive ? Theme::TextPrimary : Theme::TextSecondary);
         StringFormat sf;
         sf.SetLineAlignment(StringAlignmentCenter);
         RectF textRc(navItem.X + 16.0f, navItem.Y, navItem.Width - 20.0f, navItem.Height);
-        g.DrawString(navLabels[i], -1, isActive ? m_fBold : m_fNormal, textRc, &sf, &itemTxt);
+        g.DrawString(navEntries[i].label, -1, isActive ? m_fBold : m_fNormal, textRc, &sf, &itemTxt);
     }
 
     // Status Card at Bottom
@@ -372,13 +379,13 @@ void AppWindow::RenderSidebar(Graphics& g, const RectF& rect) {
 }
 
 void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
-    float startX = rect.X + 28.0f;
+    float startX = rect.X + 32.0f;
     float startY = 24.0f;
-    float contentW = rect.Width - 56.0f;
+    float contentW = rect.Width - 64.0f;
 
     // Progress bar overlay when busy
     if (m_isBusy) {
-        RectF pBarBg(rect.X + 8.0f, 4.0f, rect.Width - 16.0f, 10.0f);
+        RectF pBarBg(rect.X + 12.0f, 4.0f, rect.Width - 24.0f, 10.0f);
         SolidBrush pbBg(Color(255, 20, 28, 42));
         RenderUtils::FillRoundedRect(g, pbBg, pBarBg, 5.0f);
         float filled = (pBarBg.Width - 4.0f) * ((float)m_progressPercent / 100.0f);
@@ -390,99 +397,174 @@ void AppWindow::RenderDashboard(Graphics& g, const RectF& rect) {
         SolidBrush actBrush(Theme::AccentBlue);
         g.DrawString((L"⚡ " + m_progressAction + L" (" + std::to_wstring(m_progressPercent) + L"%)").c_str(),
             -1, m_fSmall, PointF(startX, 18.0f), &actBrush);
-        startY = 40.0f;
+        startY = 44.0f;
     }
 
     SolidBrush titleBrush(Theme::TextPrimary);
-    g.DrawString(L"System & Browser Security Dashboard", -1, m_fTitle, PointF(startX, startY), &titleBrush);
+    SolidBrush subBrush(Theme::TextSecondary);
+
+    // Left Header: "Dashboard" title matching ui.png
+    g.DrawString(L"Dashboard", -1, m_fMainTitle, PointF(startX, startY), &titleBrush);
 
     std::wstring sub = L"Active Target: " + m_browsers[m_selectedBrowserIdx].name;
     if (!m_browsers[m_selectedBrowserIdx].version.empty()) {
         sub += L" (v" + m_browsers[m_selectedBrowserIdx].version + L")";
     }
-    SolidBrush subBrush(Theme::TextSecondary);
-    g.DrawString(sub.c_str(), -1, m_fSubtitle, PointF(startX, startY + 26.0f), &subBrush);
+    g.DrawString(sub.c_str(), -1, m_fSubtitle, PointF(startX, startY + 36.0f), &subBrush);
 
-    // 1. Health Score Gauge
-    RectF gaugeRect(startX, startY + 54.0f, contentW, 96.0f);
-    RenderUtils::DrawScoreGauge(g, gaugeRect, m_auditReport.score, m_fBold, m_fScore);
+    // Right Header: Health Score Ring matching ui.png
+    float ringX = startX + (contentW * 0.52f);
+    float ringY = startY;
+    float ringR = 64.0f;
+    RectF ringBox(ringX - ringR, ringY + 28.0f, ringR * 2.0f, ringR * 2.0f);
 
-    // 2. Four Metric Cards Row
-    float cardY = startY + 160.0f;
-    float cardW = (contentW - 36.0f) / 4.0f;
-    float cardH = 76.0f;
-
-    // Metric 1: Hardened Policies
-    RectF m1(startX, cardY, cardW, cardH);
-    RenderUtils::DrawCard(g, m1, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"PROTECTED POLICIES", -1, m_fSmall, PointF(m1.X + 12.0f, m1.Y + 10.0f), &subBrush);
-    std::wstring polStr = std::to_wstring(m_auditReport.optimizedCount) + L" Subsystems";
-    g.DrawString(polStr.c_str(), -1, m_fBold, PointF(m1.X + 12.0f, m1.Y + 32.0f), &titleBrush);
-
-    // Metric 2: Network Shield
-    RectF m2(startX + cardW + 12.0f, cardY, cardW, cardH);
-    RenderUtils::DrawCard(g, m2, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"NETWORK SHIELD", -1, m_fSmall, PointF(m2.X + 12.0f, m2.Y + 10.0f), &subBrush);
-    SolidBrush shBrush(m_shieldStatus.hostsBlockActive ? Theme::SuccessGreen : Theme::WarningOrange);
-    g.DrawString(m_shieldStatus.hostsBlockActive ? L"Firewall & Hosts ON" : L"Shield Inactive", -1, m_fBold, PointF(m2.X + 12.0f, m2.Y + 32.0f), &shBrush);
-
-    // Metric 3: AI Subsystems
-    RectF m3(startX + (cardW + 12.0f) * 2.0f, cardY, cardW, cardH);
-    RenderUtils::DrawCard(g, m3, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"AI & GEMINI ENGINE", -1, m_fSmall, PointF(m3.X + 12.0f, m3.Y + 10.0f), &subBrush);
-    SolidBrush aiStBrush(m_auditReport.score >= 80 ? Theme::SuccessGreen : Theme::WarningOrange);
-    g.DrawString(m_auditReport.score >= 80 ? L"Eliminated (0 Active)" : L"Action Needed", -1, m_fBold, PointF(m3.X + 12.0f, m3.Y + 32.0f), &aiStBrush);
-
-    // Metric 4: Reclaimable Space
-    RectF m4(startX + (cardW + 12.0f) * 3.0f, cardY, cardW, cardH);
-    RenderUtils::DrawCard(g, m4, Theme::BgCard, Theme::BorderSubtle, 8.0f);
-    g.DrawString(L"RECLAIMABLE SPACE", -1, m_fSmall, PointF(m4.X + 12.0f, m4.Y + 10.0f), &subBrush);
-    std::wstring spaceStr = std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB Whitespace";
-    g.DrawString(spaceStr.c_str(), -1, m_fBold, PointF(m4.X + 12.0f, m4.Y + 32.0f), &titleBrush);
-
-    // 3. Quick Action Buttons Row
-    float actY = startY + 248.0f;
-    RectF btn1(startX, actY, 230.0f, 42.0f);
-    RenderUtils::DrawGradientButton(g, btn1, L"🚀  Apply Maximum Preset", false, false, m_fBold, !m_isBusy);
-
-    RectF btn2(startX + 242.0f, actY, 230.0f, 42.0f);
-    RenderUtils::DrawGradientButton(g, btn2, L"🛡🔥  Engage Network Shield", false, false, m_fBold, !m_isBusy);
-
-    RectF btn3(startX + 484.0f, actY, 200.0f, 42.0f);
-    RenderUtils::DrawGradientButton(g, btn3, L"🧊  Ultra-Low RAM", false, false, m_fBold, !m_isBusy);
-
-    RectF btn4(startX + 696.0f, actY, 130.0f, 42.0f);
-    RenderUtils::DrawCard(g, btn4, Theme::BgCard, Theme::BorderSubtle, 8.0f);
     StringFormat sfCenter;
     sfCenter.SetAlignment(StringAlignmentCenter);
     sfCenter.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"🧹 Clean", -1, m_fBold, btn4, &sfCenter, &titleBrush);
 
-    // 4. Audit Checklist Table
-    float listY = startY + 306.0f;
-    g.DrawString(L"SECURITY AUDIT & HARDENING FINDINGS", -1, m_fSmall, PointF(startX, listY), &subBrush);
+    // "Health Score Ring" title
+    RectF ringTitleRc(ringX - 110.0f, ringY, 220.0f, 24.0f);
+    g.DrawString(L"Health Score Ring", -1, m_fBold, ringTitleRc, &sfCenter, &titleBrush);
 
-    float itemY = listY + 20.0f;
-    for (size_t i = 0; i < m_auditReport.items.size() && i < 5; ++i) {
-        RectF rowRect(startX, itemY + i * 54.0f, contentW, 48.0f);
-        RenderUtils::DrawCard(g, rowRect, Theme::BgCard, Theme::BorderSubtle, 6.0f);
+    // Background track arc
+    Pen trackPen(Color(255, 30, 41, 59), 16.0f);
+    trackPen.SetStartCap(LineCapRound);
+    trackPen.SetEndCap(LineCapRound);
+    g.DrawArc(&trackPen, ringBox, 135, 270);
 
+    // Foreground arc
+    Color arcColor = (m_auditReport.score >= 80) ? Color(255, 16, 185, 129) : ((m_auditReport.score >= 50) ? Theme::WarningOrange : Theme::DangerRed);
+    Pen fillPen(arcColor, 16.0f);
+    fillPen.SetStartCap(LineCapRound);
+    fillPen.SetEndCap(LineCapRound);
+    float sweep = (270.0f * (float)m_auditReport.score) / 100.0f;
+    if (sweep > 0.0f) {
+        g.DrawArc(&fillPen, ringBox, 135, sweep);
+    }
+
+    // Centered percentage & subtitle inside ring
+    std::wstring pctStr = std::to_wstring(m_auditReport.score) + L"%";
+    SolidBrush pctBrush(arcColor);
+    RectF pctRc(ringX - 60.0f, ringBox.Y + 30.0f, 120.0f, 38.0f);
+    g.DrawString(pctStr.c_str(), -1, m_fScore, pctRc, &sfCenter, &pctBrush);
+
+    std::wstring subStr = (m_auditReport.score >= 90) ? L"Fully Hardened" : ((m_auditReport.score >= 70) ? L"Hardened" : L"Action Needed");
+    SolidBrush subTxtBrush(arcColor);
+    RectF subRc(ringX - 70.0f, ringBox.Y + 70.0f, 140.0f, 20.0f);
+    g.DrawString(subStr.c_str(), -1, m_fSmall, subRc, &sfCenter, &subTxtBrush);
+
+    // 2. Three Metric Cards Row (Protected Policies, AI Models, Reclaimable Cache)
+    float cardsY = ringBox.Y + ringBox.Height + 20.0f;
+    float cardW = (contentW - 32.0f) / 3.0f;
+    float cardH = 88.0f;
+
+    // Card 1: Protected Policies
+    RectF c1(startX, cardsY, cardW, cardH);
+    RenderUtils::DrawCard(g, c1, Theme::BgCard, Theme::BorderSubtle, 10.0f);
+    std::wstring polStr = std::to_wstring(m_auditReport.optimizedCount);
+    RectF c1Num(c1.X + 16.0f, c1.Y + 12.0f, c1.Width - 32.0f, 36.0f);
+    g.DrawString(polStr.c_str(), -1, m_fHuge, c1Num, &sfCenter, &titleBrush);
+    RectF c1Lbl(c1.X + 16.0f, c1.Y + 50.0f, c1.Width - 32.0f, 22.0f);
+    g.DrawString(L"Protected Policies", -1, m_fSmall, c1Lbl, &sfCenter, &subBrush);
+
+    // Card 2: AI Models (Eliminated)
+    RectF c2(startX + cardW + 16.0f, cardsY, cardW, cardH);
+    RenderUtils::DrawCard(g, c2, Theme::BgCard, Theme::BorderSubtle, 10.0f);
+    RectF c2Num(c2.X + 16.0f, c2.Y + 12.0f, c2.Width - 32.0f, 36.0f);
+    g.DrawString(L"0", -1, m_fHuge, c2Num, &sfCenter, &titleBrush);
+    RectF c2Lbl(c2.X + 16.0f, c2.Y + 50.0f, c2.Width - 32.0f, 22.0f);
+    g.DrawString(L"AI Models (Eliminated)", -1, m_fSmall, c2Lbl, &sfCenter, &subBrush);
+
+    // Card 3: Reclaimable Cache
+    RectF c3(startX + (cardW + 16.0f) * 2.0f, cardsY, cardW, cardH);
+    RenderUtils::DrawCard(g, c3, Theme::BgCard, Theme::BorderSubtle, 10.0f);
+    std::wstring cacheStr = std::to_wstring(m_auditReport.reclaimableBytes / (1024 * 1024)) + L" MB";
+    RectF c3Num(c3.X + 16.0f, c3.Y + 12.0f, c3.Width - 32.0f, 36.0f);
+    g.DrawString(cacheStr.c_str(), -1, m_fHuge, c3Num, &sfCenter, &titleBrush);
+    RectF c3Lbl(c3.X + 16.0f, c3.Y + 50.0f, c3.Width - 32.0f, 22.0f);
+    g.DrawString(L"Reclaimable Cache", -1, m_fSmall, c3Lbl, &sfCenter, &subBrush);
+
+    // 3. Five Quick Action Buttons Row (including Hardened Gaming Mode)
+    float btnY = cardsY + cardH + 16.0f;
+    float btn1W = 250.0f;
+    float otherBtnW = (contentW - btn1W - 48.0f) / 4.0f;
+    float btnH = 42.0f;
+
+    // Primary: Apply Maximum Optimization (lavender/indigo pill with dark text)
+    RectF b1(startX, btnY, btn1W, btnH);
+    SolidBrush b1Bg(Color(255, 219, 226, 255));
+    RenderUtils::FillRoundedRect(g, b1Bg, b1, 21.0f);
+    SolidBrush b1Txt(Color(255, 15, 23, 42));
+    g.DrawString(L"⚡  Apply Maximum", -1, m_fBold, b1, &sfCenter, &b1Txt);
+
+    // Button 2: Re-Scan System
+    RectF b2(startX + btn1W + 12.0f, btnY, otherBtnW, btnH);
+    RenderUtils::DrawCard(g, b2, Theme::BgCard, Theme::BorderSubtle, 21.0f);
+    g.DrawString(L"🔄  Re-Scan", -1, m_fBold, b2, &sfCenter, &titleBrush);
+
+    // Button 3: Install Gaming Mode
+    RectF b3(startX + btn1W + 12.0f + (otherBtnW + 12.0f), btnY, otherBtnW, btnH);
+    RenderUtils::DrawCard(g, b3, Theme::BgCard, Theme::BorderSubtle, 21.0f);
+    g.DrawString(L"🎮  Gaming Mode", -1, m_fBold, b3, &sfCenter, &titleBrush);
+
+    // Button 4: Create Snapshot
+    RectF b4(startX + btn1W + 12.0f + (otherBtnW + 12.0f) * 2.0f, btnY, otherBtnW, btnH);
+    RenderUtils::DrawCard(g, b4, Theme::BgCard, Theme::BorderSubtle, 21.0f);
+    g.DrawString(L"📸  Snapshot", -1, m_fBold, b4, &sfCenter, &titleBrush);
+
+    // Button 5: Engage Shield
+    RectF b5(startX + btn1W + 12.0f + (otherBtnW + 12.0f) * 3.0f, btnY, otherBtnW, btnH);
+    RenderUtils::DrawCard(g, b5, Theme::BgCard, Theme::BorderSubtle, 21.0f);
+    g.DrawString(L"🛡  Engage Shield", -1, m_fBold, b5, &sfCenter, &titleBrush);
+
+    // 4. Audit Findings Table Card (matching ui.png)
+    float tableY = btnY + btnH + 18.0f;
+    float tableH = rect.Height - tableY - 20.0f;
+    RectF tableCard(startX, tableY, contentW, tableH);
+    RenderUtils::DrawCard(g, tableCard, Theme::BgCard, Theme::BorderSubtle, 10.0f);
+
+    // Table Header
+    RectF tHeader(tableCard.X + 20.0f, tableCard.Y + 12.0f, tableCard.Width - 40.0f, 22.0f);
+    g.DrawString(L"Audit Findings", -1, m_fBold, PointF(tHeader.X, tHeader.Y), &titleBrush);
+    StringFormat sfRight;
+    sfRight.SetAlignment(StringAlignmentFar);
+    g.DrawString(L"Status", -1, m_fBold, tHeader, &sfRight, &titleBrush);
+
+    Pen rowDiv(Theme::BorderSubtle, 1.0f);
+    g.DrawLine(&rowDiv, tableCard.X, tableCard.Y + 38.0f, tableCard.X + tableCard.Width, tableCard.Y + 38.0f);
+
+    // Table Rows
+    float rY = tableCard.Y + 42.0f;
+    float rH = 44.0f;
+    for (size_t i = 0; i < m_auditReport.items.size() && (rY + rH) <= (tableCard.Y + tableCard.Height - 8.0f); ++i) {
         bool isOpt = (m_auditReport.items[i].status == AuditStatus::Optimized);
-        const wchar_t* icon = isOpt ? L"✓" : L"!";
-        SolidBrush iconBrush(isOpt ? Theme::SuccessGreen : Theme::WarningOrange);
-        g.DrawString(icon, -1, m_fBold, PointF(rowRect.X + 14.0f, rowRect.Y + 12.0f), &iconBrush);
+        Color dotColor = isOpt ? Color(255, 16, 185, 129) : Theme::WarningOrange;
+        SolidBrush dotBrush(dotColor);
 
-        g.DrawString(m_auditReport.items[i].name.c_str(), -1, m_fBold, PointF(rowRect.X + 36.0f, rowRect.Y + 6.0f), &titleBrush);
-        g.DrawString(m_auditReport.items[i].description.c_str(), -1, m_fSmall, PointF(rowRect.X + 36.0f, rowRect.Y + 26.0f), &subBrush);
+        // Green filled circle checkmark icon
+        RectF iconRc(tableCard.X + 20.0f, rY + 12.0f, 20.0f, 20.0f);
+        g.FillEllipse(&dotBrush, iconRc);
+        SolidBrush chkBrush(Color(255, 11, 14, 20));
+        g.DrawString(isOpt ? L"✓" : L"!", -1, m_fSmall, iconRc, &sfCenter, &chkBrush);
 
-        RectF badgeRc(rowRect.X + rowRect.Width - 130.0f, rowRect.Y + 12.0f, 116.0f, 22.0f);
+        // Finding Title
+        SolidBrush nameBrush(Theme::TextPrimary);
+        g.DrawString(m_auditReport.items[i].name.c_str(), -1, m_fBold, PointF(tableCard.X + 48.0f, rY + 12.0f), &nameBrush);
+
+        // Status pill badge: [ Fully Hardened ]
+        RectF pillRc(tableCard.X + tableCard.Width - 146.0f, rY + 10.0f, 126.0f, 24.0f);
         RenderUtils::DrawBadge(
-            g, badgeRc,
-            isOpt ? L"OPTIMIZED" : L"ATTENTION",
-            isOpt ? Theme::SuccessBadge : Theme::WarningBadge,
-            isOpt ? Theme::SuccessGreen : Theme::WarningOrange,
+            g, pillRc,
+            isOpt ? L"Fully Hardened" : L"Action Needed",
+            isOpt ? Color(255, 16, 50, 35) : Color(255, 60, 35, 15),
+            isOpt ? Color(255, 16, 185, 129) : Theme::WarningOrange,
             m_fSmall
         );
+
+        rY += rH;
+        if (i + 1 < m_auditReport.items.size() && (rY + rH) <= (tableCard.Y + tableCard.Height - 8.0f)) {
+            g.DrawLine(&rowDiv, tableCard.X + 16.0f, rY, tableCard.X + tableCard.Width - 16.0f, rY);
+        }
     }
 }
 
@@ -600,27 +682,31 @@ void AppWindow::RenderTweaks(Graphics& g, const RectF& rect) {
         startY = pbY + 30.0f;
     }
 
-    // 4 Presets Row
+    // 5 Presets Row (including Gaming Mode)
     float presY = startY + 52.0f;
     StringFormat sfCenter;
     sfCenter.SetAlignment(StringAlignmentCenter);
     sfCenter.SetLineAlignment(StringAlignmentCenter);
 
-    RectF p1(startX, presY, 140.0f, 32.0f);
+    RectF p1(startX, presY, 130.0f, 32.0f);
     RenderUtils::DrawCard(g, p1, Theme::BgCardHover, Theme::BorderSubtle, 4.0f);
     g.DrawString(L"⚡ Maximum", -1, m_fSmall, p1, &sfCenter, &titleBrush);
 
-    RectF p2(startX + 148.0f, presY, 140.0f, 32.0f);
+    RectF p2(startX + 138.0f, presY, 130.0f, 32.0f);
     RenderUtils::DrawCard(g, p2, Theme::BgCard, Theme::BorderSubtle, 4.0f);
     g.DrawString(L"⚖ Balanced", -1, m_fSmall, p2, &sfCenter, &subBrush);
 
-    RectF p3(startX + 296.0f, presY, 140.0f, 32.0f);
+    RectF p3(startX + 276.0f, presY, 140.0f, 32.0f);
     RenderUtils::DrawCard(g, p3, Theme::BgCard, Theme::BorderSubtle, 4.0f);
     g.DrawString(L"🔒 Privacy Only", -1, m_fSmall, p3, &sfCenter, &subBrush);
 
-    RectF p4(startX + 444.0f, presY, 170.0f, 32.0f);
+    RectF p4(startX + 424.0f, presY, 170.0f, 32.0f);
     RenderUtils::DrawCard(g, p4, Theme::BgCard, Theme::BorderSubtle, 4.0f);
     g.DrawString(L"🧊 Ultra-Low Resource", -1, m_fSmall, p4, &sfCenter, &subBrush);
+
+    RectF p5(startX + 602.0f, presY, 150.0f, 32.0f);
+    RenderUtils::DrawCard(g, p5, Theme::BgCard, Theme::BorderSubtle, 4.0f);
+    g.DrawString(L"🎮 Gaming Mode", -1, m_fSmall, p5, &sfCenter, &titleBrush);
 
     // Tweak Cards
     float cardY = presY + 42.0f - (float)m_tweakScrollY;
@@ -893,11 +979,18 @@ void AppWindow::OnMouseWheel(short delta) {
 }
 
 void AppWindow::OnLButtonDown(int x, int y) {
+    RECT cr;
+    GetClientRect(m_hwnd, &cr);
+    float clientW = (float)(cr.right - cr.left);
+    float clientH = (float)(cr.bottom - cr.top);
+    float sidebarW = 240.0f;
+    float contentW = clientW - sidebarW;
+
     // 1. Sidebar Browser Picker
-    RectF browCard(16.0f, 98.0f, 208.0f, 76.0f);
-    if (x >= browCard.X && x <= browCard.X + browCard.Width && y >= browCard.Y + 28.0f && y <= browCard.Y + 60.0f) {
-        float btnW = (browCard.Width - 24.0f) / 3.0f;
-        int clickedIdx = (int)((x - (browCard.X + 12.0f)) / btnW);
+    RectF browCard(16.0f, 102.0f, sidebarW - 32.0f, 44.0f);
+    if (x >= browCard.X && x <= browCard.X + browCard.Width && y >= browCard.Y && y <= browCard.Y + browCard.Height) {
+        float btnW = (browCard.Width - 8.0f) / 3.0f;
+        int clickedIdx = (int)((x - (browCard.X + 4.0f)) / btnW);
         if (clickedIdx >= 0 && clickedIdx < 3 && clickedIdx != m_selectedBrowserIdx) {
             m_selectedBrowserIdx = clickedIdx;
             RunAuditAsync();
@@ -907,53 +1000,99 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
     }
 
-    // 2. Sidebar Navigation (7 items)
-    float navY = 188.0f;
-    float navH = 36.0f;
+    // 2. Sidebar Navigation (7 items matching navEntries order in RenderSidebar)
+    const NavPage navPages[] = {
+        NavPage::Dashboard,
+        NavPage::Tweaks,
+        NavPage::Cleaner,
+        NavPage::Shield,
+        NavPage::Updates,
+        NavPage::Backups,
+        NavPage::Logs
+    };
+    float navY = 166.0f;
+    float navH = 38.0f;
     for (int i = 0; i < 7; ++i) {
-        RectF navItem(16.0f, navY + i * (navH + 5.0f), 208.0f, navH);
+        RectF navItem(16.0f, navY + i * (navH + 6.0f), sidebarW - 32.0f, navH);
         if (x >= navItem.X && x <= navItem.X + navItem.Width && y >= navItem.Y && y <= navItem.Y + navItem.Height) {
-            m_currentPage = (NavPage)i;
+            m_currentPage = navPages[i];
             InvalidateRect(m_hwnd, NULL, FALSE);
             return;
         }
     }
 
     // 3. Page Actions
-    float contentX = 240.0f;
-    float startX = contentX + 28.0f;
+    float startX = sidebarW + 28.0f;
     float startY = 24.0f;
+    float pageContentW = contentW - 56.0f;
 
     if (m_currentPage == NavPage::Dashboard) {
-        float actY = startY + 248.0f;
-        if (x >= startX && x <= startX + 230.0f && y >= actY && y <= actY + 42.0f) {
+        float dashStartX = sidebarW + 32.0f;
+        float dashContentW = contentW - 64.0f;
+        float dStartY = m_isBusy ? 44.0f : 24.0f;
+        float ringR = 64.0f;
+        float ringBoxH = ringR * 2.0f;
+        float cardsY = dStartY + 28.0f + ringBoxH + 20.0f;
+        float cardH = 88.0f;
+        float btnY = cardsY + cardH + 16.0f;
+        float btn1W = 250.0f;
+        float otherBtnW = (dashContentW - btn1W - 48.0f) / 4.0f;
+        float btnH = 42.0f;
+
+        // Button 1: Apply Maximum Optimization
+        RectF b1(dashStartX, btnY, btn1W, btnH);
+        if (x >= b1.X && x <= b1.X + b1.Width && y >= b1.Y && y <= b1.Y + b1.Height) {
             TweakEngine::ApplyPreset(m_tweaks, TweakPreset::Maximum);
             RunApplyTweaksAsync();
-        } else if (x >= startX + 242.0f && x <= startX + 472.0f && y >= actY && y <= actY + 42.0f) {
+            return;
+        }
+        // Button 2: Re-Scan System
+        RectF b2(dashStartX + btn1W + 12.0f, btnY, otherBtnW, btnH);
+        if (x >= b2.X && x <= b2.X + b2.Width && y >= b2.Y && y <= b2.Y + b2.Height) {
+            RunAuditAsync();
+            RunCheckShieldAsync();
+            return;
+        }
+        // Button 3: Install Gaming Mode
+        RectF b3(dashStartX + btn1W + 12.0f + (otherBtnW + 12.0f), btnY, otherBtnW, btnH);
+        if (x >= b3.X && x <= b3.X + b3.Width && y >= b3.Y && y <= b3.Y + b3.Height) {
+            RunInstallGamingModeAsync();
+            return;
+        }
+        // Button 4: Create Snapshot
+        RectF b4(dashStartX + btn1W + 12.0f + (otherBtnW + 12.0f) * 2.0f, btnY, otherBtnW, btnH);
+        if (x >= b4.X && x <= b4.X + b4.Width && y >= b4.Y && y <= b4.Y + b4.Height) {
+            RunCreateBackupAsync();
+            return;
+        }
+        // Button 5: Engage Shield
+        RectF b5(dashStartX + btn1W + 12.0f + (otherBtnW + 12.0f) * 3.0f, btnY, otherBtnW, btnH);
+        if (x >= b5.X && x <= b5.X + b5.Width && y >= b5.Y && y <= b5.Y + b5.Height) {
             RunToggleAllShieldAsync(true);
-        } else if (x >= startX + 484.0f && x <= startX + 684.0f && y >= actY && y <= actY + 42.0f) {
-            TweakEngine::ApplyPreset(m_tweaks, TweakPreset::UltraLowResource);
-            RunApplyTweaksAsync();
-        } else if (x >= startX + 696.0f && x <= startX + 826.0f && y >= actY && y <= actY + 42.0f) {
-            RunDeepCleanAsync();
+            return;
         }
     } else if (m_currentPage == NavPage::Tweaks) {
         float presY = startY + 52.0f;
+        if (m_isBusy) presY += 30.0f;
         if (y >= presY && y <= presY + 32.0f) {
-            if (x >= startX && x <= startX + 140.0f) {
+            if (x >= startX && x <= startX + 130.0f) {
                 TweakEngine::ApplyPreset(m_tweaks, TweakPreset::Maximum);
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
-            } else if (x >= startX + 148.0f && x <= startX + 288.0f) {
+            } else if (x >= startX + 138.0f && x <= startX + 268.0f) {
                 TweakEngine::ApplyPreset(m_tweaks, TweakPreset::Balanced);
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
-            } else if (x >= startX + 296.0f && x <= startX + 436.0f) {
+            } else if (x >= startX + 276.0f && x <= startX + 416.0f) {
                 TweakEngine::ApplyPreset(m_tweaks, TweakPreset::PrivacyOnly);
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
-            } else if (x >= startX + 444.0f && x <= startX + 614.0f) {
+            } else if (x >= startX + 424.0f && x <= startX + 594.0f) {
                 TweakEngine::ApplyPreset(m_tweaks, TweakPreset::UltraLowResource);
+                InvalidateRect(m_hwnd, NULL, FALSE);
+                return;
+            } else if (x >= startX + 602.0f && x <= startX + 752.0f) {
+                TweakEngine::ApplyPreset(m_tweaks, TweakPreset::GamingMode);
                 InvalidateRect(m_hwnd, NULL, FALSE);
                 return;
             }
@@ -962,7 +1101,7 @@ void AppWindow::OnLButtonDown(int x, int y) {
         // Toggles
         float cardY = presY + 42.0f - (float)m_tweakScrollY;
         for (size_t i = 0; i < m_tweaks.size(); ++i) {
-            RectF togRc(startX + (1120.0f - 240.0f - 56.0f) - 52.0f, cardY + 20.0f, 40.0f, 22.0f);
+            RectF togRc(startX + pageContentW - 52.0f, cardY + 20.0f, 40.0f, 22.0f);
             if (x >= togRc.X - 10.0f && x <= togRc.X + togRc.Width + 10.0f && y >= togRc.Y && y <= togRc.Y + togRc.Height) {
                 m_tweaks[i].enabled = !m_tweaks[i].enabled;
                 InvalidateRect(m_hwnd, NULL, FALSE);
@@ -972,11 +1111,10 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
 
         // Apply Button
-        RECT cr;
-        GetClientRect(m_hwnd, &cr);
-        RectF applyBtn(startX, (float)cr.bottom - 60.0f, (float)(cr.right - cr.left) - 240.0f - 56.0f, 44.0f);
+        RectF applyBtn(startX, clientH - 60.0f, pageContentW, 44.0f);
         if (x >= applyBtn.X && x <= applyBtn.X + applyBtn.Width && y >= applyBtn.Y && y <= applyBtn.Y + applyBtn.Height) {
             RunApplyTweaksAsync();
+            return;
         }
     } else if (m_currentPage == NavPage::Shield) {
         float by = startY + 56.0f;
@@ -992,7 +1130,7 @@ void AppWindow::OnLButtonDown(int x, int y) {
         // Card 1 Hosts Buttons
         float cardY = by + 56.0f;
         float cardH = 150.0f;
-        RectF c1(startX, cardY, (float)(1120 - 240) - 56.0f, cardH);
+        RectF c1(startX, cardY, pageContentW, cardH);
         if (x >= c1.X + 16.0f && x <= c1.X + 176.0f && y >= c1.Y + 104.0f && y <= c1.Y + 136.0f) {
             RunToggleHostsBlockAsync(true);
             return;
@@ -1002,7 +1140,7 @@ void AppWindow::OnLButtonDown(int x, int y) {
         }
 
         // Card 2 Firewall Buttons
-        RectF c2(startX, cardY + cardH + 16.0f, (float)(1120 - 240) - 56.0f, cardH);
+        RectF c2(startX, cardY + cardH + 16.0f, pageContentW, cardH);
         if (x >= c2.X + 16.0f && x <= c2.X + 176.0f && y >= c2.Y + 104.0f && y <= c2.Y + 136.0f) {
             RunToggleFirewallBlockAsync(true);
             return;
@@ -1015,6 +1153,7 @@ void AppWindow::OnLButtonDown(int x, int y) {
         float runY = cy + 330.0f;
         if (x >= startX && x <= startX + 280.0f && y >= runY && y <= runY + 46.0f) {
             RunDeepCleanAsync();
+            return;
         }
     } else if (m_currentPage == NavPage::Updates) {
         float by = startY + 56.0f;
@@ -1025,10 +1164,9 @@ void AppWindow::OnLButtonDown(int x, int y) {
 
         float cardY = by + 52.0f;
         float cardH = 110.0f;
-        float contentW = (float)(1120 - 240) - 56.0f;
 
         for (int i = 0; i < 3; ++i) {
-            RectF uCard(startX, cardY + i * (cardH + 12.0f), contentW, cardH);
+            RectF uCard(startX, cardY + i * (cardH + 12.0f), pageContentW, cardH);
             RectF lockBtn(uCard.X + uCard.Width - 280.0f, uCard.Y + 54.0f, 130.0f, 36.0f);
             RectF unlockBtn(uCard.X + uCard.Width - 140.0f, uCard.Y + 54.0f, 130.0f, 36.0f);
 
@@ -1044,17 +1182,30 @@ void AppWindow::OnLButtonDown(int x, int y) {
         float by = startY + 68.0f;
         if (x >= startX && x <= startX + 220.0f && y >= by && y <= by + 40.0f) {
             RunCreateBackupAsync();
+            return;
         } else if (x >= startX + 236.0f && x <= startX + 456.0f && y >= by && y <= by + 40.0f) {
             RunResetPoliciesAsync();
+            return;
+        }
+
+        float listY = by + 60.0f;
+        float sy = listY + 22.0f;
+        for (size_t i = 0; i < m_snapshots.size() && i < 5; ++i) {
+            RectF sRc(startX, sy + i * 58.0f, pageContentW, 50.0f);
+            RectF rst(sRc.X + sRc.Width - 110.0f, sRc.Y + 12.0f, 96.0f, 26.0f);
+            if (x >= rst.X && x <= rst.X + rst.Width && y >= rst.Y && y <= rst.Y + rst.Height) {
+                RunRestoreBackupAsync(m_snapshots[i].id);
+                return;
+            }
         }
     } else if (m_currentPage == NavPage::Logs) {
         if (!m_isBusy) {
-            float contentW = (float)(1120 - 240) - 56.0f;
-            float clearBtnX = startX + contentW - 100.0f;
+            float clearBtnX = startX + pageContentW - 100.0f;
             if (x >= clearBtnX && x <= clearBtnX + 96.0f && y >= startY + 20.0f && y <= startY + 46.0f) {
                 m_logs.clear();
                 AddLog(L"Activity console cleared.", L"INFO");
                 InvalidateRect(m_hwnd, NULL, FALSE);
+                return;
             }
         }
     }
@@ -1287,6 +1438,39 @@ void AppWindow::RunApplyTweaksAsync() {
     }, param, 0, NULL);
 }
 
+void AppWindow::RunInstallGamingModeAsync() {
+    if (m_isBusy) return;
+    m_isBusy = true;
+    m_progressPercent = 0;
+    m_progressAction = L"Installing Gaming Mode...";
+
+    m_currentPage = NavPage::Logs;
+    AddLog(L"══════════════════════════════════════════════", L"INFO");
+    AddLog(L"Installing Hardened Ultra Gaming Mode for " + m_browsers[m_selectedBrowserIdx].name, L"ACTION");
+
+    HWND hwnd = m_hwnd;
+    CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
+        HWND h = (HWND)p;
+        AppWindow* win = (AppWindow*)GetWindowLongPtrW(h, GWLP_USERDATA);
+        if (!win) return 0;
+        BrowserTarget b = win->m_browsers[win->m_selectedBrowserIdx];
+
+        auto logCb = [h](const std::wstring& msg, const std::wstring& lvl) {
+            std::wstring* pMsg = new std::wstring(msg);
+            std::wstring* pLvl = new std::wstring(lvl);
+            PostMessageW(h, WM_APP_ENGINE_LOG, (WPARAM)pLvl, (LPARAM)pMsg);
+        };
+
+        ShortcutManager::InstallGamingMode(b, logCb);
+
+        // Also apply GamingMode policy preset to live tweaks list
+        TweakEngine::ApplyPreset(win->m_tweaks, TweakPreset::GamingMode);
+
+        PostMessageW(h, WM_APP_ENGINE_DONE, 0, 0);
+        return 0;
+    }, hwnd, 0, NULL);
+}
+
 void AppWindow::RunDeepCleanAsync() {
     if (m_isBusy) return;
     m_isBusy = true;
@@ -1334,5 +1518,27 @@ void AppWindow::RunResetPoliciesAsync() {
         RunAuditAsync();
         RunCheckUpdatesAsync();
         RunCheckShieldAsync();
+    }
+}
+
+void AppWindow::RunRestoreBackupAsync(const std::wstring& path) {
+    std::wstring targetPath = path;
+    for (const auto& snap : m_snapshots) {
+        if (snap.id == path) {
+            targetPath = snap.filePath;
+            break;
+        }
+    }
+
+    std::wstring prompt = L"Restore registry state from snapshot " + path + L"?";
+    if (MessageBoxW(m_hwnd, prompt.c_str(), L"Confirm Restore", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+        if (BackupEngine::RestoreSnapshot(targetPath)) {
+            AddLog(L"Snapshot restored successfully: " + path, L"SUCCESS");
+            RunAuditAsync();
+            RunCheckUpdatesAsync();
+            RunCheckShieldAsync();
+        } else {
+            AddLog(L"Failed to restore snapshot: " + path, L"WARNING");
+        }
     }
 }
